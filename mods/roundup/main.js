@@ -17,7 +17,7 @@ import { detailPane, divider } from "./detail.js";
 import { ensureAvatars } from "./avatars.js";
 import { splitKey, clampListHeight, dragHeight, capDetail } from "./detail-logic.js";
 import { nextKey, dropGone, mergeRetryDelay, wantsMergeRetry, siblingKeys } from "./actions-logic.js";
-import { actionBar, mergeMenu, startMergeMenu, ensureRepoInfo, forgetRepoErrors, applyPick, closeComment, disarm, SHARED_PICK } from "./actions.js";
+import { actionBar, mergeMenu, startMergeMenu, ensureRepoInfo, ensureBehind, forgetRepoErrors, applyPick, closeComment, disarm, SHARED_PICK } from "./actions.js";
 
 const MOD = "roundup";                 // this mod's folder: the layout block that hosts the panel names it
 const POLL_MS = 60000;
@@ -93,6 +93,9 @@ export default class GitHub extends View {
     this.pickAt = shared(SHARED_PICK)?.at ?? null;
     this.armed = null;                          // { key, method, draft, headOid, base }: the merge button waits for a second click
     this.merging = null;                        // key being merged: further clicks are ignored
+    this.behind = new Map();                    // behindKey -> { value: { count, lastCommitAt }, error }: the selected PR's distance from its base
+    this.updArmed = null;                       // { key, headOid, armedAt }: Update branch waits for a second click
+    this.updating = null;                       // key whose branch is being updated
     this.comment = null;                        // { key, kind, state, sending }: the open comment box
     this.notice = null;                         // { key, text, level }: a failure kept in the bar (toasts are one truncated line)
     this.drafts = new Map();                    // key -> comment text kept after Esc
@@ -174,7 +177,7 @@ export default class GitHub extends View {
     if (key === this.selected) return;
     const prev = this.detailEntry();
     if (prev) prev.retryDue = false; // a pending look at mergeability is for the item that was selected
-    this.armed = null; this.notice = null;
+    this.armed = null; this.updArmed = null; this.notice = null;
     if (this.comment) closeComment(this, cx);
     this.selected = key;
   }
@@ -245,6 +248,7 @@ export default class GitHub extends View {
     const entry = this.detailEntry();
     if (entry && !entry.loading) entry.stamp = null;
     forgetRepoErrors(this);
+    this.behind.clear(); // the base may have moved
     this.refresh(cx, true);
     cx.notify();
   }
@@ -435,7 +439,7 @@ export default class GitHub extends View {
     const listH = clampListHeight(this.listH ?? NaN, this.size?.height);
     this.loadDetail(cx, true);
     const sel = this.tab === "pr" ? this.selectedItem() : null;
-    if (sel && !sel.merged) ensureRepoInfo(this, sel, cx);
+    if (sel && !sel.merged) { ensureRepoInfo(this, sel, cx); ensureBehind(this, sel, cx); }
     const problem = errorLine(this.listKind(), error, Boolean(data));
     // The pictures of the selected item's author and of everyone in its thread (downloaded once per run).
     const shownItem = this.selectedItem();
@@ -452,7 +456,7 @@ export default class GitHub extends View {
       .on_key_down((e, cx) => {
         if (e.key === "down") this.step(1, cx);
         else if (e.key === "up") this.step(-1, cx);
-        else if (e.key === "escape") { if (this.armed) disarm(this, cx); else if (this.query !== "") this.clearSearch(cx); }
+        else if (e.key === "escape") { if (this.armed || this.updArmed) disarm(this, cx); else if (this.query !== "") this.clearSearch(cx); }
         // Ctrl+F anywhere in the panel, `/` only when the list itself has the keyboard (not while typing in a box).
         else if ((e.key === "f" && (e.modifiers?.control || e.modifiers?.platform))
           || ((e.key === "/" || e.key_char === "/") && !e.modifiers?.control && !e.modifiers?.alt && !e.modifiers?.platform && this.keys.is_focused() && !this.typing && !this.comment)) {

@@ -7,6 +7,8 @@ import { truncated } from "./model.js";
 import { shortRepo, ago } from "./browse.js";
 import { MERGED_COLOR, spinner } from "./list.js";
 import { isReviewer } from "./config.js";
+import { behindOf } from "./actions.js";
+import { behindLine } from "./update-logic.js";
 import { whenLabel, windowTimeline, planBodies, reviewLabel, reviewInput, ciChip, reviewStateLabel, hasOlderActivity, initial, descriptionCap, ENTRY_MAX, threadBudgetFor } from "./detail-logic.js";
 
 const tone = (t, name) => name === "good" ? t.ansi2 : name === "bad" ? t.ansi1 : name === "warn" ? t.ansi3 : t.dim;
@@ -27,6 +29,8 @@ function header(p, t, item, detail) {
   // The checks and the reviewer's verdict come from the loaded detail (the list only has a rollup state and the last five comments).
   const ci = isPR ? ciChip(item.ci, detail?.checks) : null, review = isPR ? reviewLabel(reviewInput(item, detail), p.config) : null;
   const conflicts = isPR && !item.merged && detail?.mergeable === "CONFLICTING";
+  // "15 commits behind staging · last commit Oct 23": how stale the branch and its CI are.
+  const behind = isPR && detail ? behindLine(behindOf(p, item, detail), detail.base ?? item.base, p.now) : null;
   return v_flex().flex_none().gap(7)
     .child(div().font_semibold().text_size(14).child(item.title))
     .child(h_flex().gap(6).items_center().flex_wrap().text_size(11.5).text_color(t.dim)
@@ -43,6 +47,7 @@ function header(p, t, item, detail) {
       .child(chip(t, ci.text, tone(t, ci.tone)))
       .child(chip(t, review.text, tone(t, review.tone)))
       .when(conflicts, e => e.child(chip(t, "Has conflicts", t.ansi1)))
+      .when(Boolean(behind), e => e.child(chip(t, behind, t.ansi3)))
       .when(detail?.additions != null, e => e.child(h_flex().gap(5).text_size(11.5).text_color(t.dim)
         .child(div().text_color(t.ansi2).child(`+${detail.additions}`))
         .child(div().text_color(t.ansi1).child(`−${detail.deletions}`))

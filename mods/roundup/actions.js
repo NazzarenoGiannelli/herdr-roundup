@@ -1,10 +1,11 @@
-// The action bar at the bottom of the detail (copy, open, comment, merge) and the merge-method
+// The action bar at the bottom of the detail (copy, open, comment, update branch, merge) and the merge-method
 // popup. Rendering and the event flows; state lives on the GitHub view (`p`, see main.js), pure
 // logic in actions-logic.js, the gh calls in github.js.
 import { div } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
 import { notify, openOverlay, closeOverlay, props, setShared } from "herdr";
-import { fetchDetail, fetchRepo, merge, comment, isDryRun } from "./github.js";
+import { fetchDetail, fetchRepo, fetchBehind, merge, updateBranch, comment, isDryRun } from "./github.js";
+import { updateView, behindKey, wantsBehind } from "./update-logic.js";
 import { mergeView, buttonTone, preflight, refText, methodName, menuHeight, canConfirm, effectiveRef, repoKey, MERGE_RETRY_MS, onlyUnknownBlocks, commentProblem } from "./actions-logic.js";
 import { capDetail } from "./detail-logic.js";
 import { menuLabel } from "./rules.js";
@@ -38,6 +39,7 @@ export function viewFor(p, item, key) {
     item, detail: entry?.detail ?? null, repo: info?.info ?? null, repoError: info?.error ?? null, detailError: entry?.error ?? null,
     picked: p.method.get(key) ?? null, armed: p.armed?.key === key ? p.armed : null, merging: p.merging === key, config: p.config,
   });
+  if (p.updating === key && v.enabled) return { ...v, enabled: false, reason: "Updating the branch…" };
   return p.merging && p.merging !== key && v.enabled ? { ...v, enabled: false, reason: "Another merge is running" } : v;
 }
 
@@ -61,8 +63,8 @@ export function forgetRepoErrors(p) {
 }
 
 export function disarm(p, cx) {
-  if (!p.armed) return;
-  p.armed = null; cx.notify();
+  if (!p.armed && !p.updArmed) return;
+  p.armed = null; p.updArmed = null; cx.notify();
 }
 
 // First click arms (the label becomes the confirm), the second one merges.
@@ -110,7 +112,7 @@ function confirmMerge(p, item, key, cx) {
         return;
       }
       toast(isDryRun() ? `Dry run: would merge ${ref}` : `Merged ${ref}`, "success", `(${how})${isDryRun() ? ", nothing was merged" : ""}`, 4000);
-      if (!isDryRun()) p.markSiblingsStale(key, fresh.base ?? item.base); // their mergeability just changed
+      if (!isDryRun()) { p.markSiblingsStale(key, fresh.base ?? item.base); p.behind.clear(); } // their mergeability and distance just changed
       p.removeItem(key, !isDryRun());
     } finally {
       p.merging = null; p.armed = null;
@@ -138,6 +140,82 @@ export function applyPick(p, pick) {
   p.pickAt = pick.at;
   p.method.set(pick.key, pick.method);
   p.armed = null;
+}
+
+// --- update branch ----------------------------------------------------------------------------
+
+// How far the selected PR's branch is behind its base: compared once per head commit and base, only
+// for the selected PR (one REST call), and again after ⟳ or a merge.
+export function ensureBehind(p, item, cx) {
+  const detail = p.details.get(p.selected)?.detail ?? null;
+  if (!p.shown || !wantsBehind(item, detail)) return;
+  const id = behindKey(p.selected, detail.headOid, detail.base);
+  if (p.behind.has(id)) return;
+  const entry = { value: null, error: null };
+  p.behind.set(id, entry);
+  cx.spawn(async cx => {
+    try { entry.value = await fetchBehind(item.repo, detail.headOid, detail.base); }
+    catch (e) { entry.error = message(e); }
+    cx.notify();
+  });
+}
+
+// The comparison of the selected PR as the header and the bar use it ({ count, lastCommitAt }), or null.
+export function behindOf(p, item, detail) {
+  if (!wantsBehind(item, detail)) return null;
+  return p.behind.get(behindKey(`${item.repo}#${item.number}`, detail.headOid, detail.base))?.value ?? null;
+}
+
+function updateViewFor(p, item, key) {
+  const detail = p.details.get(key)?.detail ?? null;
+  return updateView({
+    item, detail, behind: behindOf(p, item, detail),
+    armed: p.updArmed?.key === key ? p.updArmed : null,
+    updating: p.updating === key, busy: Boolean(p.merging) || Boolean(p.updating && p.updating !== key),
+  });
+}
+
+// First click arms (the label becomes "Confirm update"), the second one updates.
+export function clickUpdate(p, cx) {
+  const item = p.selectedItem(), key = p.selected;
+  if (!item || p.tab !== "pr" || p.updating || p.merging) return;
+  const u = updateViewFor(p, item, key);
+  if (!u?.enabled) return;
+  if (u.armed) return canConfirm(p.updArmed, Date.now()) ? confirmUpdate(p, item, key, cx) : undefined;
+  p.notice = null; p.armed = null;
+  p.updArmed = { key, headOid: p.details.get(key)?.detail?.headOid ?? null, armedAt: Date.now() };
+  p.keys.focus();
+  cx.notify();
+}
+
+// GitHub refuses the update when the branch moved since it was armed (expected_head_sha), so there is
+// no re-check here. The update is asynchronous on GitHub's side: the detail and the list are read again
+// a few seconds later, when the new head commit and its CI show up.
+const UPDATE_RELOAD_MS = 4000;
+function confirmUpdate(p, item, key, cx) {
+  const armed = p.updArmed, ref = refText(item);
+  p.updating = key; p.updArmed = null;
+  cx.notify();
+  cx.spawn(async cx => {
+    try {
+      try { await updateBranch(item.repo, item.number, armed.headOid); }
+      catch (e) { fail(p, key, `Couldn't update ${ref}`, `Couldn't update the branch: ${message(e)}`); return; }
+      const base = p.details.get(key)?.detail?.base ?? item.base;
+      toast(isDryRun() ? `Dry run: would update ${ref}` : `Updated ${ref}`, "success",
+        isDryRun() ? "nothing was changed" : `merged ${base} into the branch; CI runs again`, 4000);
+      if (isDryRun()) return;
+      for (const id of [...p.behind.keys()]) if (id.startsWith(`${key}@`)) p.behind.delete(id);
+      cx.timer.after(UPDATE_RELOAD_MS, cx => {
+        const entry = p.details.get(key);
+        if (entry && !entry.loading) entry.stamp = null;
+        p.refresh(cx, false);
+        cx.notify();
+      });
+    } finally {
+      p.updating = null;
+      cx.notify();
+    }
+  });
 }
 
 // --- comment ----------------------------------------------------------------------------------
@@ -196,8 +274,10 @@ export function sendComment(p, cx) {
 
 // --- the bar ----------------------------------------------------------------------------------
 
-const button = (t, id, label, onClick, { off = false } = {}) =>
-  h_flex().id(id).h(28).px(10).flex_none().items_center().rounded(6).border_1().border_color(t.border).text_size(12)
+// `tip`: the tooltip, for the buttons that show only an icon (the label is then the icon alone).
+const button = (t, id, label, onClick, { off = false, tip = null } = {}) =>
+  h_flex().id(id).h(28).px(tip ? 8 : 10).flex_none().items_center().justify_center().rounded(6).border_1().border_color(t.border).text_size(12)
+    .when(Boolean(tip), el => el.min_w(28).tooltip(tip))
     .when(off, el => el.text_color(t.dim).opacity(0.6))
     .when(!off, el => el.text_color(t.muted).cursor_pointer().hover(s => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => onClick(cx)))
     .child(label);
@@ -230,6 +310,17 @@ function mergeButton(p, t, v) {
   return h_flex().flex_none().rounded(RADIUS).child(main).child(arrow);
 }
 
+// Neutral like the side buttons; armed in the merge button's armed colours.
+function updateButton(p, t, u) {
+  return h_flex().id("gh-update").h(28).px(10).flex_none().items_center().rounded(RADIUS).border_1().text_size(12)
+    .when(u.armed, el => el.bg(t.background).border_color(t.ansi3).text_color(t.ansi3))
+    .when(!u.armed, el => el.border_color(t.border).text_color(u.enabled ? t.muted : t.dim))
+    .when(!u.enabled, el => el.opacity(0.6))
+    .when(u.enabled, el => el.cursor_pointer().hover(s => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => clickUpdate(p, cx)))
+    .when(u.armed, el => el.on_mouse_down_out((_e, cx) => disarm(p, cx)))
+    .child(u.label);
+}
+
 function commentBox(p, t) {
   const c = p.comment;
   return v_flex().gap(6)
@@ -254,7 +345,9 @@ export function actionBar(p, t) {
   const v = isPR && !item.merged ? viewFor(p, item, key) : null;
   // The button states what it will do: anything that changes it since the click needs a new click.
   if (p.armed && (p.armed.key !== key || !v?.armed)) p.armed = null;
-  const note = v && (v.merging ? { text: "Merging…", color: t.dim }
+  const u = isPR && !item.merged ? updateViewFor(p, item, key) : null;
+  if (p.updArmed && (p.updArmed.key !== key || !u?.armed)) p.updArmed = null;
+  const note = u?.note ? { text: u.note, color: u.armed ? t.ansi3 : t.dim } : v && (v.merging ? { text: "Merging…", color: t.dim }
     : v.armed ? { text: "Click again to confirm · Esc to cancel", color: t.ansi3 }
     : v.reason ? { text: v.status === "loading" ? v.reason : `Can't merge: ${v.reason}`, color: v.status === "loading" ? t.dim : t.ansi3 } : null);
   return v_flex().id("gh-bar").flex_none().border_t(1).border_color(t.border).px(10).py(8).gap(8)
@@ -266,11 +359,14 @@ export function actionBar(p, t) {
     // One row: copy, open and comment on the left, the merge button on the right. When a long label
     // ("Confirm mark ready and squash and merge") doesn't fit, the merge button wraps to its own line.
     .child(h_flex().gap(6).flex_wrap().items_center()
-      .child(button(t, "gh-copy-ref", `⧉ #${item.number}`, cx => copy(cx, "reference", refText(item))))
-      .child(button(t, "gh-copy-url", "⧉ URL", cx => copy(cx, "URL", item.url)))
-      .child(button(t, "gh-open", "↗ GitHub", cx => cx.open_url(item.url)))
-      .when(!item.merged, el => el.child(button(t, "gh-comment", "💬 Comment", cx => openComment(p, cx))))
-      .when(Boolean(v), el => el.child(div().ml_auto().flex_none().child(mergeButton(p, t, v)))));
+      // Compact, so the merge side has room: the number copies the reference, the others are icons with a tooltip.
+      .child(button(t, "gh-copy-ref", `#${item.number}`, cx => copy(cx, "reference", refText(item)), { tip: `Copy ${refText(item)}` }))
+      .child(button(t, "gh-copy-url", "🔗", cx => copy(cx, "URL", item.url), { tip: "Copy the link" }))
+      .child(button(t, "gh-open", "↗", cx => cx.open_url(item.url), { tip: "Open on GitHub" }))
+      .when(!item.merged, el => el.child(button(t, "gh-comment", "💬", cx => openComment(p, cx), { tip: "Comment" })))
+      .when(Boolean(v), el => el.child(h_flex().ml_auto().flex_none().gap(6).items_center()
+        .when(Boolean(u), g => g.child(updateButton(p, t, u)))
+        .child(mergeButton(p, t, v)))));
 }
 
 // --- the merge popup (opened with props { menu: "merge", key, choices }) ----------------------------

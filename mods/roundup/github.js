@@ -1,9 +1,10 @@
-// Everything the panel reads from GitHub, through `gh`: queries and GETs, plus the two writes
-// (merge, comment) at the bottom, whose arguments are built by actions-logic.js.
+// Everything the panel reads from GitHub, through `gh`: queries and GETs, plus the three writes
+// (merge, update branch, comment) at the bottom, whose arguments are built by actions-logic.js.
 // Each function rejects with a readable Error: gh's stderr, or GraphQL's first error message.
 import { exec, shared, setShared } from "herdr";
 import { mergePlan, commentArgs, runPlan, commentProblem } from "./actions-logic.js";
 import { normalizePRs, normalizeIssues, normalizeDetail } from "./model.js";
+import { behindFromCompare, comparePath, updateArgs } from "./update-logic.js";
 import { parseGraphql, methodFromParents, allowedFromRules, isNotFound, rulesUnavailable } from "./parse.js";
 import { lookupOwners, onceUntilFailure } from "./owners.js";
 import { PR_LIST, ISSUE_LIST, PR_DETAIL, ISSUE_DETAIL, LAST_MERGED, MERGED_LIST, prSearch, issueSearch, mergedSearch } from "./queries.js";
@@ -45,6 +46,13 @@ async function get(path, { soft = false } = {}) {
     throw new Error((r.stderr || "").trim() || `gh exited with code ${r.code}`);
   }
   try { return JSON.parse(r.stdout); } catch { throw new Error("GitHub returned an unreadable response (not JSON)"); }
+}
+
+// How far a pull request's branch is behind its base, and when its head commit was made.
+export async function fetchBehind(repo, headOid, base) {
+  const json = await get(comparePath(repo, headOid, base));
+  if (!json) throw new Error(`Couldn't compare the branch with ${base}`);
+  return behindFromCompare(json);
 }
 
 const repoCache = new Map(); // "repo:base" -> Promise, for the app's run; a failure is not kept
@@ -100,6 +108,9 @@ const write = (plan) => runPlan(plan, { exec, dry: isDryRun(), log: dryLog });
 // Merges a PR. `draft`: marks it ready first. `headOid`: refused by GitHub if the branch moved.
 export const merge = (repo, number, method, { draft = false, headOid = null } = {}) =>
   write(mergePlan(repo, number, method, { draft, headOid }));
+
+// Merges the base into the PR's branch (GitHub's "Update branch"). Refused if the branch moved since `headOid`.
+export const updateBranch = (repo, number, headOid) => write([{ step: "update", args: updateArgs(repo, number, headOid) }]);
 
 // Comments on a PR (kind "pr") or an issue (kind "issue").
 export const comment = (kind, repo, number, body) => {
