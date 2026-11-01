@@ -140,6 +140,32 @@ export function toggleRepo(f, row) {
   return { ...f, repos: (on ? f.repos.filter((r) => r !== row.repo) : [...f.repos, row.repo]).sort(byName) };
 }
 
+// --- opening and closing the menus ---------------------------------------------------------------------
+
+export const MENU_GAP = 4;          // px between a button's bottom edge and its menu
+export const RECLOSE_MS = 400;      // a press within this long of the menu closing is the press that closed it
+
+// Where a menu opens: under the pressed button, left edges aligned, whatever spot of the button was
+// pressed. From the press event: `bounds` (the button's box), else position minus local position.
+// "pointer" when the event says nothing about the button (not painted yet).
+export function menuAnchor(e, height = 24, gap = MENU_GAP) {
+  if (e?.bounds && Number.isFinite(e.bounds.x) && Number.isFinite(e.bounds.y)) {
+    return { x: Math.round(e.bounds.x), y: Math.round(e.bounds.y + (e.bounds.height ?? height) + gap) };
+  }
+  if (e?.position && e?.local_position) {
+    return { x: Math.round(e.position.x - e.local_position.x), y: Math.round(e.position.y - e.local_position.y + height + gap) };
+  }
+  return "pointer";
+}
+
+// Pressing a menu's button again closes it instead of opening a second one. `menu` is the shared record
+// the popup keeps ({ kind, id, open, at }): open, or closed a moment ago by this very press (Herdr closes
+// a popup on a press outside it, which can come before the button's click).
+export function pressCloses(menu, kind, now, window = RECLOSE_MS) {
+  if (!menu || menu.kind !== kind) return false;
+  return menu.open === true || (Number.isFinite(menu.at) && now - menu.at < window);
+}
+
 // The arrow keys of a menu: the next enabled row from `at` in `delta` direction, wrapping around.
 export function nextRow(rows, at, delta) {
   const n = rows.length;

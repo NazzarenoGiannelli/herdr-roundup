@@ -4,7 +4,7 @@ import { normalizeConfig } from "../config.js";
 import { GROUP_IDS } from "../rules.js";
 import {
   DEFAULT_FILTERS, normalizeFilters, parseStored, applyFilters, statusCounts, isAllStatus, isDefault,
-  statusLabel, reposLabel, mergedLabel, statusRows, statusMenuHeight, toggleStatus, repoCounts, repoRows, reposMenuHeight, toggleRepo, nextRow,
+  statusLabel, reposLabel, mergedLabel, statusRows, statusMenuHeight, toggleStatus, repoCounts, repoRows, reposMenuHeight, toggleRepo, nextRow, menuAnchor, pressCloses,
   MENU_ROW_H, MENU_SEP_H, MENU_PAD, MENU_MAX_ROWS,
 } from "../filters.js";
 
@@ -304,4 +304,28 @@ test("nextRow: wraps around and skips disabled rows", () => {
 test("nextRow: a menu with one enabled row stays on it", () => {
   assert.equal(nextRow([{ disabled: false }], 0, 1), 0);
   assert.equal(nextRow([{ disabled: true }, { disabled: true }], 1, 1), 1);
+});
+
+// --- where the menus open, and a second press -------------------------------------------------------
+
+test("menuAnchor: under the button, left edges aligned, wherever the button was pressed", () => {
+  const bounds = { x: 1365, y: 137, width: 92, height: 24 };
+  assert.deepEqual(menuAnchor({ position: { x: 1400, y: 150 }, local_position: { x: 35, y: 13 }, bounds }), { x: 1365, y: 165 });
+  assert.deepEqual(menuAnchor({ position: { x: 1450, y: 140 }, local_position: { x: 85, y: 3 }, bounds }), { x: 1365, y: 165 });
+});
+
+test("menuAnchor: without bounds it uses the press position minus the local position; with nothing, the pointer", () => {
+  assert.deepEqual(menuAnchor({ position: { x: 1400, y: 150 }, local_position: { x: 35, y: 13 } }), { x: 1365, y: 165 });
+  assert.equal(menuAnchor({ position: { x: 1, y: 2 } }), "pointer");
+  assert.equal(menuAnchor(null), "pointer");
+});
+
+test("pressCloses: the same menu open, or closed a moment ago, closes; another menu or a while later opens", () => {
+  const now = 10_000;
+  assert.equal(pressCloses({ kind: "status", open: true, at: 0 }, "status", now), true);
+  assert.equal(pressCloses({ kind: "status", open: false, at: now - 100 }, "status", now), true);
+  assert.equal(pressCloses({ kind: "status", open: false, at: now - 1000 }, "status", now), false);
+  assert.equal(pressCloses({ kind: "repos", open: true, at: now }, "status", now), false);
+  assert.equal(pressCloses(null, "status", now), false);
+  assert.equal(pressCloses({ kind: "status", open: false, at: 0 }, "status", now), false);
 });

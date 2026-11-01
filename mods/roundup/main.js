@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG, configNote } from "./config.js";
 import { isShown } from "./layout-logic.js";
 import { stableOrder, byMerged, groupRows, selectable, rowIndex, keyOf, errorLine, parseQuery, search, githubTargets, resultsLine } from "./browse.js";
 import { tabs, filtersRow, rowsList, note, emptyState, noMatch, refreshButton, collapseButton, statusMenu, reposMenu, targetsMenu } from "./list.js";
-import { normalizeFilters, parseStored, applyFilters, statusCounts, statusRows, statusMenuHeight, repoCounts, repoRows, reposMenuHeight, toggleStatus, toggleRepo } from "./filters.js";
+import { normalizeFilters, parseStored, applyFilters, statusCounts, statusRows, statusMenuHeight, repoCounts, repoRows, reposMenuHeight, toggleStatus, toggleRepo, pressCloses } from "./filters.js";
 import { detailPane, divider } from "./detail.js";
 import { ensureAvatars } from "./avatars.js";
 import { splitKey, clampListHeight, dragHeight, capDetail } from "./detail-logic.js";
@@ -23,6 +23,7 @@ const MOD = "roundup";                 // this mod's folder: the layout block th
 const POLL_MS = 60000;
 const WATCH_MS = 3000; // a cheap look at visibility (no gh): catches "just shown"
 const SHARED_FILTERS = "roundup.filters"; // written by the Status and Repos popups: the filter state and `at` (see filters.js)
+const SHARED_MENU = "roundup.menu";       // kept by the open filter popup: { kind, id, open, at } (a second press on its button closes it)
 const FILTERS_KEY = "roundup.filters";    // localStorage: the filter state, kept across restarts
 const LIST_H_KEY = "roundup.listH";  // localStorage: the list's height in px
 const DRAG_GAP_MS = 45;                // the divider repaints at about 20 frames a second
@@ -60,11 +61,16 @@ export default class GitHub extends View {
       else if (props().menu === "github") this.menuTargets = props().targets ?? [];
       else if (props().menu === "status") { this.menuFilters = normalizeFilters(props().filters); this.menuStatus = { counts: props().counts, days: props().days }; }
       else { this.menuFilters = normalizeFilters(props().filters); this.menuRepos = props().repos ?? []; }
+      if (this.menuStatus || this.menuRepos) {
+        this.menuKind = this.menuStatus ? "status" : "repos";
+        setShared(SHARED_MENU, { kind: this.menuKind, id: props().overlay, open: true, at: Date.now() });
+      }
       return;
     }
     // config.json is read once, at the start; the first fetch waits for it (refresh). `configNote` is the
     // line shown when the file had a problem.
     this.config = DEFAULT_CONFIG; this.configNote = null;
+    setShared(SHARED_MENU, null); // a menu left "open" by the last run (shared state is kept on disk) is not open now
     this.configReady = readConfig().then((r) => { this.config = r.config; this.configNote = configNote(r.problems); return r; });
     this.tab = "pr";
     // Which of the list is shown: statuses and repositories (see filters.js). Kept in localStorage; the
@@ -284,15 +290,26 @@ export default class GitHub extends View {
 
   // --- the filter dropdowns ---
   // The panel side: the Status and Repos buttons open a popup with the state and the numbers as props.
+  // A second press on the same button closes its menu (SHARED_MENU is kept by the popup: see init and close).
+  // Both menus open under their button (p.menuAnchor, set on the press; see list.js).
+  pressClosesMenu(kind) {
+    const menu = shared(SHARED_MENU);
+    if (!pressCloses(menu, kind, Date.now())) return false;
+    if (menu.open && menu.id) closeOverlay(menu.id);
+    setShared(SHARED_MENU, { ...menu, open: false, at: 0 }); // the next press opens it again
+    return true;
+  }
   openStatus(_cx) {
+    if (this.pressClosesMenu("status")) return;
     const counts = statusCounts(this.prs?.items ?? [], this.merged?.items ?? null, this.filters.repos, this.config);
     const days = this.config.mergedDays;
     const rows = statusRows(this.filters, counts, days);
-    openOverlay({ mod: "roundup", kind: "popup", width: 270, height: statusMenuHeight(rows), props: { menu: "status", filters: this.filters, counts, days } });
+    openOverlay({ mod: "roundup", kind: "popup", width: 270, height: statusMenuHeight(rows), at: this.menuAnchor ?? "pointer", props: { menu: "status", filters: this.filters, counts, days } });
   }
   openRepos(_cx) {
+    if (this.pressClosesMenu("repos")) return;
     const repos = repoCounts(this.source()?.items ?? [], this.filters.repos);
-    openOverlay({ mod: "roundup", kind: "popup", width: 260, height: reposMenuHeight(repoRows(repos, this.filters.repos)), props: { menu: "repos", filters: this.filters, repos } });
+    openOverlay({ mod: "roundup", kind: "popup", width: 260, height: reposMenuHeight(repoRows(repos, this.filters.repos)), at: this.menuAnchor ?? "pointer", props: { menu: "repos", filters: this.filters, repos } });
   }
   // The popup side: a tick changes the popup's own copy and is written to the shared key, which the
   // panel reads in render. The popup stays open.
@@ -307,6 +324,12 @@ export default class GitHub extends View {
     cx.notify();
   }
   closeMenu() { closeOverlay(props().overlay); }
+  // A filter menu says it closed (Esc, a press outside, its button pressed again): see pressClosesMenu.
+  async close(_cx) {
+    if (!this.menuKind) return;
+    const menu = shared(SHARED_MENU);
+    if (menu?.kind === this.menuKind && menu.id === props()?.overlay) setShared(SHARED_MENU, { ...menu, open: false, at: Date.now() });
+  }
 
   // --- search ---
   // Esc, by where the keyboard is. In the field: clears the text, and with the field empty leaves it

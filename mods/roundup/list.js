@@ -3,7 +3,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, v_virtual_list, Input } from "gpui-base";
 import { keyOf, shortRepo, ago, priority, ROW_H, issueRowHeight, HEADING_H, isHeading } from "./browse.js";
-import { statusLabel, reposLabel, isAllStatus, nextRow, statusMenuHeight, reposMenuHeight } from "./filters.js";
+import { statusLabel, reposLabel, isAllStatus, nextRow, statusMenuHeight, reposMenuHeight, menuAnchor } from "./filters.js";
 
 // Room for an issue row's label chips: panel width minus list padding (8), row padding (20), dot and gap (17), scrollbar (12).
 const chipRoom = (p) => (p.size?.width ?? 560) - 57;
@@ -48,10 +48,12 @@ export function searchField(p, t) {
 }
 
 // A dropdown button: its label says what is selected, ▾ that it opens a menu. `active`: it narrows the list.
-const dropdown = (id, label, active, t, onClick) =>
+// The press records where the button is (p.menuAnchor), so the menu opens right under it.
+const dropdown = (p, id, label, active, t, onClick) =>
   h_flex().id(id).h(24).px(10).gap(6).flex_none().items_center().rounded(12).cursor_pointer().text_size(11.5)
     .border_1().border_color(active ? t.accent : t.border).bg(active ? t.selected : t.background)
     .text_color(active ? t.foreground : t.muted).hover(s => s.bg(t.hover))
+    .on_mouse_down("left", e => { p.menuAnchor = menuAnchor(e); })
     .on_click((_e, cx) => onClick(cx))
     .child(label)
     .child(div().text_color(t.dim).child("▾"));
@@ -59,8 +61,8 @@ const dropdown = (id, label, active, t, onClick) =>
 // `[Status: All ▾] [Repos: All ▾]`: Status is for the PR tab only. Each opens a popup of checkboxes (p.openStatus, p.openRepos).
 export function filtersRow(p, t) {
   return h_flex().flex_none().px(12).pt(8).gap(6).flex_wrap()
-    .when(p.tab === "pr", el => el.child(dropdown("gh-filter-status", statusLabel(p.filters), !isAllStatus(p.filters), t, cx => p.openStatus(cx))))
-    .child(dropdown("gh-filter-repos", reposLabel(p.filters), p.filters.repos.length > 0, t, cx => p.openRepos(cx)));
+    .when(p.tab === "pr", el => el.child(dropdown(p, "gh-filter-status", statusLabel(p.filters), !isAllStatus(p.filters), t, cx => p.openStatus(cx))))
+    .child(dropdown(p, "gh-filter-repos", reposLabel(p.filters), p.filters.repos.length > 0, t, cx => p.openRepos(cx)));
 }
 
 const labelChip = (t, text, color) => div().flex_none().px(5).h(16).flex().items_center().rounded(4).border_1().border_color(t.border)
