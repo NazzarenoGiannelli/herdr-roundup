@@ -2,9 +2,9 @@
 
 GitHub pull requests and issues for Herdr: read, comment, merge.
 
-![Roundup](preview.png)
+![Roundup: the list grouped by whose move it is, the Status menu, and a merge waiting for its second click](preview.png)
 
-Roundup is a panel for the [Herdr](https://herdr.dev) desktop app. It lists the open pull requests and issues of the GitHub users and organizations you pick, across all their repositories at once. Select one to read its description and conversation. A bar under the detail copies the number or URL, opens the page on GitHub, posts a comment, and merges with a split button like GitHub's. It talks to GitHub through the `gh` command line tool, so there is no token to paste and nothing to download.
+Roundup is a panel for the [Herdr](https://herdr.dev) desktop app. It lists the open pull requests and issues of the GitHub users and organizations you pick, across all their repositories at once. Select one to read its description and conversation. A one-row bar under the detail copies the number or URL, opens the page on GitHub, posts a comment, and merges with a split button like GitHub's (two clicks: the first arms it, the second merges). Two dropdowns above the list, Status and Repos, narrow it down. It talks to GitHub through the `gh` command line tool, so there is no token to paste and nothing to download.
 
 Pull requests are grouped by whose move it is: ready to merge, to review, needs fixing, waiting for CI, drafts. When CI blocks a merge, the bar names the checks that failed or are still running.
 

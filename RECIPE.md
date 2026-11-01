@@ -29,8 +29,8 @@ One rounded panel (radius 10, 1px `border`, `background` fill, 13px text in `for
    - On a dry run: `Dry run — nothing will be merged` in `ansi3`, 11.5px.
    - The comment box when open: a textarea that grows from 3 to 10 lines, a `Ctrl+Enter to send · Esc to close, the text is kept` line and a `Send` button.
    - A failure notice for the selected item, `ansi1` (error) or `ansi3` (warning), 11.5px.
-   - For a pull request that is not merged: the merge line. On its left a note, 11.5px (`Checking the pull request…`, `Can't merge: CI failing: test, build`, `Click again to confirm · Esc to cancel`, or empty), on its right the merge button.
-   - The buttons, 28px high, 6px radius, 1px `border`, 12px `muted` text: `⧉ #130`, `⧉ URL`, `↗ GitHub`, and `💬 Comment` (not for a merged pull request).
+   - For a pull request that is not merged, a note line, 11.5px, only when there is something to say: `Checking the pull request…`, `Can't merge: CI failing: test, build`, `Click again to confirm · Esc to cancel`.
+   - One row, wrapping when it doesn't fit: the buttons on the left, 28px high, 6px radius, 1px `border`, 12px `muted` text: `⧉ #130`, `⧉ URL`, `↗ GitHub`, and `💬 Comment` (not for a merged pull request); the merge button pushed to the right (`ml_auto`), for a pull request that is not merged. A long label that doesn't fit wraps the merge button onto its own line.
 
 **The merge button** is two joined parts, 28px high, 6px outer radius. The label part is semibold 12px, 12px padding; then a 28px wide `▾` part. Green (`#238636`, `#2ea043` on hover, white text, a `#ffffff40` line between the parts) when the pull request can go in as it is. Neutral (`hover` fill, `border`, `foreground`) for a draft. Armed: `background` fill, `ansi3` border and text. Off: `hover` fill and `dim` text. The `▾` part is half transparent when there is nothing to choose.
 
