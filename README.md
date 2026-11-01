@@ -40,11 +40,11 @@ An optional `mods/roundup/config.json`. Every field is optional. The panel reads
 | --- | --- | --- |
 | `owners` | your login and your organizations | GitHub users or organizations whose open pull requests and issues are listed. Empty or missing: looked up once per run with `gh api user` and `gh api user/orgs`, so the list covers your own repositories and every organization you belong to. Set `owners` to narrow it. |
 | `stagingFlow` | `false` | `true` follows a feature branch, `staging`, `main` flow when choosing the default merge method (see [Merging](#merging)). `false` uses what each repository did last. |
-| `labels.ready` | `[]` | Labels that put a pull request in the Ready to merge view and group, on top of the built-in signal (CI passing and approved). |
-| `labels.review` | `[]` | Labels that put a pull request in the In review view, on top of the built-in signal (no review yet). |
-| `labels.deps` | `["dependencies"]` | Labels that put a pull request in the Dependencies view, on top of pull requests opened by Dependabot or Renovate (matched by login, with or without `[bot]` or `app/`). |
+| `labels.ready` | `[]` | Labels that put a pull request in the Ready to merge group, on top of the built-in signal (CI passing and approved). |
+| `labels.review` | `[]` | Accepted so older config files stay valid, but it no longer changes what is listed: the To review group uses only the built-in signal (nobody has reviewed it yet). |
+| `labels.deps` | `["dependencies"]` | Labels that mark a pull request as a dependency update (what the Dependencies checkbox hides), on top of pull requests opened by Dependabot or Renovate (matched by login, with or without `[bot]` or `app/`). |
 | `reviewers` | `[]` | Logins whose comments are highlighted as the reviewer's (accent border, a "reviewer" chip). The convention: a listed reviewer's latest comment counts as an approval unless it starts with `CHANGES REQUESTED`. With none listed, only GitHub's own review decision counts. Example for people who run Claude's code review: `["claude"]`. |
-| `mergedDays` | `7` | How many days the Merged view looks back. A whole number from 1 to 365. |
+| `mergedDays` | `7` | How many days the Merged status looks back. A whole number from 1 to 365. |
 
 By default the list covers your own repositories and every organization you belong to; in a large organization its 100 most recently updated open pull requests can crowd out your own, so set `owners` to narrow the list. A list you give replaces the default (`"deps": []` turns the `dependencies` label off). Labels and logins are compared without regard to case. Names starting with `_` or `$` are ignored, so you can leave notes in the file.
 
@@ -70,8 +70,11 @@ If GitHub answers a list with results and an error as well (an organization that
 
 ## Using it
 
-- **Tabs:** PR and Issue, each with its total. Views for pull requests: All, Ready to merge, In review, Dependencies, Drafts, Merged. Chips below filter by repository (the six biggest, the rest under "+ more").
-- **Groups:** in every view except Merged, and while you are not searching, pull requests sit under headings in this order: Ready to merge, To review, Needs fixing, Waiting, Drafts. A pull request is in the first group that fits. Drafts are always last. Empty groups are hidden.
+- **Tabs:** PR and Issue, each with its total.
+- **Filters:** two dropdowns under the tabs, `Status: ... ▾` and `Repos: ... ▾`. Both open a list of checkboxes that stays open while you tick; each tick applies at once, and Esc or a click outside closes it. The choice is remembered across restarts.
+  - **Status** (PR tab only) has `All`, one checkbox per group with its count (Ready to merge, To review, Needs fixing, Waiting, Drafts), `Dependencies` (untick it to hide dependency updates from every group) and `Merged (last 7 days)`. Merged is exclusive: ticking it shows the pull requests merged in the last `mergedDays` days and greys out the others; unticking it brings back your previous boxes. The button reads `Status: All`, `Status: Merged`, `Status: 3 of 5`, with ` · no deps` added when Dependencies is off.
+  - **Repos** (both tabs) has `All` and every repository of the list with its count, most items first. Tick as many as you like; nothing ticked means all. A ticked repository with nothing left in the list stays in the menu, greyed with 0, so you can untick it. The button reads `Repos: All`, `Repos: widgets`, `Repos: gadgets, widgets` or `Repos: 3`.
+- **Groups:** while you are not searching (and not on Merged), pull requests sit under headings in this order: Ready to merge, To review, Needs fixing, Waiting, Drafts. A pull request is in the first group that fits. Drafts are always last. Empty groups are hidden.
 - **Dots:** green CI passing, red failing, amber running, grey none, purple merged.
 - **Refresh:** the list reloads every minute while the panel is on screen. `⟳` reloads now. `⤢` folds the list so the detail gets the whole panel. Drag the bar between them to resize.
 - **Keys:**
@@ -80,7 +83,7 @@ If GitHub answers a list with results and an error as well (an organization that
   - `Esc` cancels an armed merge, then clears the search; a second `Esc` leaves the field.
   - In the search field, `↓` goes to the results and `Enter` selects the first one. For a number with no match, `Enter` opens it on GitHub.
   - `Ctrl+Enter` sends a comment, `Esc` closes the box and keeps the text.
-- **Search:** `130` or `#130`, `widgets#130`, `acme/widgets#130`, or words from the title, repository or labels. It covers the whole tab, whatever the view.
+- **Search:** `130` or `#130`, `widgets#130`, `acme/widgets#130`, or words from the title, repository or labels. It covers the whole tab and ignores the filters; clearing it brings the filtered list back.
 
 ## Merging
 

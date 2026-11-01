@@ -1,10 +1,10 @@
-// The list half of the GitHub panel: tabs, views, repository chips and the rows.
+// The list half of the GitHub panel: tabs, the two filter dropdowns and the rows.
 // Rendering only; state and fetching live in main.js, pure logic in browse.js.
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, v_virtual_list, Input } from "gpui-base";
-import { VIEWS, keyOf, shortRepo, ago, priority, ROW_H, issueRowHeight, HEADING_H, isHeading } from "./browse.js";
+import { keyOf, shortRepo, ago, priority, ROW_H, issueRowHeight, HEADING_H, isHeading } from "./browse.js";
+import { statusLabel, reposLabel, isAllStatus, nextRow } from "./filters.js";
 
-export const MAX_CHIPS = 6;
 // Room for an issue row's label chips: panel width minus list padding (8), row padding (20), dot and gap (17), scrollbar (12).
 const chipRoom = (p) => (p.size?.width ?? 560) - 57;
 
@@ -47,16 +47,20 @@ export function searchField(p, t) {
       .child("×")));
 }
 
-export function viewsRow(p, t, counts) {
-  return h_flex().flex_none().px(12).pt(8).gap(6).flex_wrap()
-    .children(VIEWS.map(v => pill(`gh-view-${v.id}`, v.label, counts[v.id], p.view === v.id, t, cx => p.setView(v.id, cx))));
-}
+// A dropdown button: its label says what is selected, ▾ that it opens a menu. `active`: it narrows the list.
+const dropdown = (id, label, active, t, onClick) =>
+  h_flex().id(id).h(24).px(10).gap(6).flex_none().items_center().rounded(12).cursor_pointer().text_size(11.5)
+    .border_1().border_color(active ? t.accent : t.border).bg(active ? t.selected : t.background)
+    .text_color(active ? t.foreground : t.muted).hover(s => s.bg(t.hover))
+    .on_click((_e, cx) => onClick(cx))
+    .child(label)
+    .child(div().text_color(t.dim).child("▾"));
 
-export function chipsRow(p, t, shown, more) {
-  return h_flex().flex_none().px(12).pt(6).gap(6).flex_wrap()
-    .child(pill("gh-repo-all", "All repos", null, !p.repo, t, cx => p.setRepo(null, cx)))
-    .children(shown.map(c => pill(`gh-repo-${c.repo}`, shortRepo(c.repo), c.count, p.repo === c.repo, t, cx => p.setRepo(p.repo === c.repo ? null : c.repo, cx))))
-    .when(more.length > 0, el => el.child(pill("gh-repo-more", "+ more ▾", null, false, t, () => p.openMore(more))));
+// `[Status: All ▾] [Repos: All ▾]`: Status is for the PR tab only. Each opens a popup of checkboxes (p.openStatus, p.openRepos).
+export function filtersRow(p, t) {
+  return h_flex().flex_none().px(12).pt(8).gap(6).flex_wrap()
+    .when(p.tab === "pr", el => el.child(dropdown("gh-filter-status", statusLabel(p.filters), !isAllStatus(p.filters), t, cx => p.openStatus(cx))))
+    .child(dropdown("gh-filter-repos", reposLabel(p.filters), p.filters.repos.length > 0, t, cx => p.openRepos(cx)));
 }
 
 const labelChip = (t, text, color) => div().flex_none().px(5).h(16).flex().items_center().rounded(4).border_1().border_color(t.border)
@@ -107,7 +111,7 @@ export function emptyState(t, text) {
 }
 
 // A search with nothing found. For a bare number, the way out is GitHub itself (a closed PR is still one
-// step away): "Open on GitHub ▾" lists `owner/repo#n` for the repositories shown as chips.
+// step away): "Open on GitHub ▾" lists `owner/repo#n` for the repositories of the list.
 export function noMatch(p, t, parsed, text, targets) {
   const isNumber = parsed.number != null && parsed.words.length === 0;
   const what = parsed.repo ? `${parsed.repo}#${parsed.number}` : `#${parsed.number}`;
@@ -136,24 +140,41 @@ export function collapseButton(p, t) {
     .child("⤢");
 }
 
-// The "+ more ▾" popup: the repositories that did not get a chip, with their counts.
-export function moreMenu(p, t) {
-  const list = p.menuRepos;
-  return v_flex().id("roundup-menu").track_focus(p.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8).overflow_y_scrollbar()
+// A popup of checkboxes (the Status and Repos menus). `rows` come from filters.js; `p.toggle(row, cx)`
+// applies a click or Enter/Space at once and the popup stays open. Disabled rows are greyed and skipped by ↑/↓.
+function checkMenu(p, t, id, rows) {
+  const press = (row, cx) => { if (!row.disabled) p.toggle(row, cx); };
+  return v_flex().id(id).track_focus(p.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8).overflow_y_scrollbar()
     .on_key_down((e, cx) => {
-      if (e.key === "down") p.at = (p.at + 1) % list.length;
-      else if (e.key === "up") p.at = (p.at + list.length - 1) % list.length;
-      else if (e.key === "enter") return p.chooseRepo(list[p.at].repo);
+      if (e.key === "down") p.at = nextRow(rows, p.at, 1);
+      else if (e.key === "up") p.at = nextRow(rows, p.at, -1);
+      else if (e.key === "enter" || e.key === "space" || e.key === " " || e.key_char === " ") return press(rows[p.at] ?? rows[0], cx);
       else if (e.key === "escape") return p.closeMenu();
       else return;
       cx.notify();
     })
-    .children(list.map((c, i) =>
-      h_flex().id(`ghm-${c.repo}`).h(31).flex_none().px(8).gap(9).rounded(7).items_center().text_color(t.foreground).cursor_pointer()
-        .when(i === p.at, el => el.bg(t.selected)).hover(s => s.bg(t.hover))
-        .on_click(() => p.chooseRepo(c.repo))
-        .child(div().flex_1().min_w(0).truncate().child(shortRepo(c.repo)))
-        .child(div().text_size(11.5).text_color(t.dim).child(String(c.count)))));
+    .children(rows.flatMap((row, i) => [
+      ...(row.sepBefore ? [div().flex_none().h(1).mx(8).my(4).bg(t.border)] : []),
+      h_flex().id(`ghf-${row.kind}-${row.id}`).h(31).flex_none().px(8).gap(9).rounded(7).items_center().text_color(t.foreground)
+        .when(i === p.at && !row.disabled, el => el.bg(t.selected))
+        .when(!row.disabled, el => el.cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => { p.at = i; press(row, cx); }))
+        .when(row.disabled, el => el.opacity(0.45).cursor_not_allowed())
+        .when(row.empty && !row.disabled, el => el.opacity(0.6))
+        .child(div().size(14).flex_none().flex().items_center().justify_center().rounded(3).border_1().border_color(row.checked ? t.accent : t.dim)
+          .text_size(10).text_color(t.accent).child(row.checked ? "✓" : ""))
+        .child(div().flex_1().min_w(0).truncate().child(row.label))
+        .when(row.count != null, el => el.child(div().text_size(11.5).text_color(t.dim).child(String(row.count)))),
+    ]));
+}
+
+// The "Status ▾" popup: All, one checkbox per group with its count, Dependencies, then Merged.
+export function statusMenu(p, t) {
+  return checkMenu(p, t, "roundup-status-menu", p.statusRows());
+}
+
+// The "Repos ▾" popup: All, then every repository of the list, most items first.
+export function reposMenu(p, t) {
+  return checkMenu(p, t, "roundup-repos-menu", p.reposRows());
 }
 
 // The "Open on GitHub ▾" popup: one row per repository, opens that URL.

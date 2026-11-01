@@ -10,8 +10,9 @@ import { fetchPRs, fetchIssues, fetchMerged, fetchDetail } from "./github.js";
 import { readConfig } from "./config-file.js";
 import { DEFAULT_CONFIG, configNote } from "./config.js";
 import { isShown } from "./layout-logic.js";
-import { select, viewCounts, stableOrder, byMerged, groupRows, selectable, rowIndex, chipsFor, keyOf, errorLine, parseQuery, search, githubTargets, resultsLine } from "./browse.js";
-import { tabs, viewsRow, chipsRow, rowsList, note, emptyState, noMatch, refreshButton, collapseButton, moreMenu, targetsMenu, MAX_CHIPS } from "./list.js";
+import { stableOrder, byMerged, groupRows, selectable, rowIndex, keyOf, errorLine, parseQuery, search, githubTargets, resultsLine } from "./browse.js";
+import { tabs, filtersRow, rowsList, note, emptyState, noMatch, refreshButton, collapseButton, statusMenu, reposMenu, targetsMenu } from "./list.js";
+import { normalizeFilters, parseStored, applyFilters, statusCounts, statusRows, statusMenuHeight, repoCounts, repoRows, reposMenuHeight, toggleStatus, toggleRepo } from "./filters.js";
 import { detailPane, divider } from "./detail.js";
 import { ensureAvatars } from "./avatars.js";
 import { splitKey, clampListHeight, dragHeight, capDetail } from "./detail-logic.js";
@@ -21,7 +22,8 @@ import { actionBar, mergeMenu, startMergeMenu, ensureRepoInfo, forgetRepoErrors,
 const MOD = "roundup";                 // this mod's folder: the layout block that hosts the panel names it
 const POLL_MS = 60000;
 const WATCH_MS = 3000; // a cheap look at visibility (no gh): catches "just shown"
-const SHARED_REPO = "roundup.repo"; // written by the "+ more" popup: { repo, at }
+const SHARED_FILTERS = "roundup.filters"; // written by the Status and Repos popups: the filter state and `at` (see filters.js)
+const FILTERS_KEY = "roundup.filters";    // localStorage: the filter state, kept across restarts
 const LIST_H_KEY = "roundup.listH";  // localStorage: the list's height in px
 const DRAG_GAP_MS = 45;                // the divider repaints at about 20 frames a second
 const DETAILS_KEPT = 15;               // details cached for the session, oldest dropped first (bodies are kept cut to what is rendered)
@@ -29,6 +31,13 @@ const GONE_MS = 5 * 60000;             // a merged PR is kept out of refreshed l
 
 function savedListHeight() {
   try { const n = Number(localStorage.getItem(LIST_H_KEY)); return Number.isFinite(n) && n > 0 ? n : null; } catch { return null; }
+}
+
+function savedFilters() {
+  try { const text = localStorage.getItem(FILTERS_KEY); return text ? parseStored(text) : null; } catch { return null; }
+}
+function saveFilters(filters) {
+  try { localStorage.setItem(FILTERS_KEY, JSON.stringify(filters)); } catch { /* not remembered */ }
 }
 
 // Fetching only pays off while the panel can be seen: its block is in the layout, no column
@@ -41,21 +50,26 @@ const message = (e) => String(e?.message || e);
 
 export default class GitHub extends View {
   init(_props, cx) {
-    // Opened as a popup ("+ more" repositories, or the merge methods): just the menu, nothing else
-    // (no fetching, no timers).
+    // Opened as a popup (the Status or Repos filter, "Open on GitHub", or the merge methods): just the
+    // menu, nothing else (no fetching, no timers). The filter menus keep their own copy of the state,
+    // which they write to a shared key at every tick (see pickFilters).
     if (props()?.menu) {
       this.at = 0;
       this.handle = cx.focus_handle(); this.handle.focus();
       if (props().menu === "merge") startMergeMenu(this);
       else if (props().menu === "github") this.menuTargets = props().targets ?? [];
-      else this.menuRepos = props().repos ?? [];
+      else if (props().menu === "status") { this.menuFilters = normalizeFilters(props().filters); this.menuStatus = { counts: props().counts, days: props().days }; }
+      else { this.menuFilters = normalizeFilters(props().filters); this.menuRepos = props().repos ?? []; }
       return;
     }
     // config.json is read once, at the start; the first fetch waits for it (refresh). `configNote` is the
     // line shown when the file had a problem.
     this.config = DEFAULT_CONFIG; this.configNote = null;
     this.configReady = readConfig().then((r) => { this.config = r.config; this.configNote = configNote(r.problems); return r; });
-    this.tab = "pr"; this.view = "all"; this.repo = null;
+    this.tab = "pr";
+    // Which of the list is shown: statuses and repositories (see filters.js). Kept in localStorage; the
+    // popups change it through a shared key, read in render.
+    this.filters = savedFilters() ?? normalizeFilters(shared(SHARED_FILTERS));
     this.prs = null; this.issues = null;        // { items, total } of the last good fetch
     this.merged = null;                         // the Merged view's list, fetched only while that view is open
     this.mergedTried = 0;                       // when it was last asked for (0: ask on the next look)
@@ -84,9 +98,9 @@ export default class GitHub extends View {
     this.rows = [];                             // the items shown, in order: what ↑/↓ and the search move through
     this.display = [];                          // `rows` with the group headings among them: what the list draws and scrolls by
     this.lastAttempt = 0; this.now = Date.now();
-    this.sharedAt = shared(SHARED_REPO)?.at ?? null;
+    this.filtersAt = shared(SHARED_FILTERS)?.at ?? null;
     this.keys = cx.focus_handle();
-    // Search: the field's text decides what the list shows (see render); the view and the chip are left alone.
+    // Search: the field's text decides what the list shows (see render); the filters are left alone.
     this.query = "";                            // the field's text, kept in step by its change event
     this.typing = false;                        // the keyboard is in the field
     this.reveal = false;                        // scroll the list to the top result / the selection on the next render
@@ -145,12 +159,10 @@ export default class GitHub extends View {
 
   reset() { this.order = null; }
   // The Merged view shows its own list (PR tab only); everything else reads the open PRs or the issues.
-  wantsMerged() { return this.tab === "pr" && this.view === "merged"; }
+  wantsMerged() { return this.tab === "pr" && this.filters.merged; }
   source() { return this.tab === "issue" ? this.issues : this.wantsMerged() ? this.merged : this.prs; }
   listKind() { return this.wantsMerged() ? "merged" : this.tab; }
   setTab(tab, cx) { if (tab !== this.tab) { this.tab = tab; this.reset(); cx.notify(); } }
-  setView(view, cx) { if (view !== this.view) { this.view = view; this.reset(); cx.notify(); } }
-  setRepo(repo, cx) { if (repo !== this.repo) { this.repo = repo; this.reset(); cx.notify(); } }
   // Another item: the armed merge is dropped, the open comment box closes (its text is kept).
   setSelected(key, cx) {
     if (key === this.selected) return;
@@ -270,10 +282,30 @@ export default class GitHub extends View {
     this.keys.focus();
   }
 
-  openMore(more) {
-    openOverlay({ mod: "roundup", kind: "popup", width: 260, height: Math.min(more.length, 12) * 31 + 12, props: { menu: "repos", repos: more } });
+  // --- the filter dropdowns ---
+  // The panel side: the Status and Repos buttons open a popup with the state and the numbers as props.
+  openStatus(_cx) {
+    const counts = statusCounts(this.prs?.items ?? [], this.merged?.items ?? null, this.filters.repos, this.config);
+    const days = this.config.mergedDays;
+    const rows = statusRows(this.filters, counts, days);
+    openOverlay({ mod: "roundup", kind: "popup", width: 270, height: statusMenuHeight(rows), props: { menu: "status", filters: this.filters, counts, days } });
   }
-  chooseRepo(repo) { setShared(SHARED_REPO, { repo, at: Date.now() }); closeOverlay(props().overlay); }
+  openRepos(_cx) {
+    const repos = repoCounts(this.source()?.items ?? [], this.filters.repos);
+    openOverlay({ mod: "roundup", kind: "popup", width: 260, height: reposMenuHeight(repoRows(repos, this.filters.repos)), props: { menu: "repos", filters: this.filters, repos } });
+  }
+  // The popup side: a tick changes the popup's own copy and is written to the shared key, which the
+  // panel reads in render. The popup stays open.
+  statusRows() { return statusRows(this.menuFilters, this.menuStatus.counts, this.menuStatus.days); }
+  reposRows() { return repoRows(this.menuRepos, this.menuFilters.repos); }
+  toggle(row, cx) {
+    this.pickFilters(this.menuStatus ? toggleStatus(this.menuFilters, row) : toggleRepo(this.menuFilters, row), cx);
+  }
+  pickFilters(next, cx) {
+    this.menuFilters = next;
+    setShared(SHARED_FILTERS, { ...next, at: Date.now() });
+    cx.notify();
+  }
   closeMenu() { closeOverlay(props().overlay); }
 
   // --- search ---
@@ -335,29 +367,30 @@ export default class GitHub extends View {
 
   render(cx) {
     const t = theme();
-    if (this.menuRepos) return moreMenu(this, t);
+    if (this.menuStatus) return statusMenu(this, t);
+    if (this.menuRepos) return reposMenu(this, t);
     if (this.menuTargets) return targetsMenu(this, t);
     if (this.menuMerge) return mergeMenu(this, t);
-    // A choice made in the "+ more" popup arrives through shared state.
-    const picked = shared(SHARED_REPO);
-    if (picked && picked.at !== this.sharedAt) { this.sharedAt = picked.at; this.repo = picked.repo; this.reset(); }
+    // A tick in the Status or Repos popup arrives through shared state.
+    const picked = shared(SHARED_FILTERS);
+    if (picked && picked.at !== this.filtersAt) { this.filtersAt = picked.at; this.filters = normalizeFilters(picked); saveFilters(this.filters); this.reset(); }
     applyPick(this, shared(SHARED_PICK));
     this.sync(cx, true);
 
     const lookBack = this.wantsMerged();
     const data = this.source();
     const items = data?.items ?? [];
-    // A chip with nothing left in the open lists is dropped; the Merged view keeps it (it is a look back).
-    if (data && this.repo && !lookBack && !items.some(i => i.repo === this.repo)) { this.repo = null; this.reset(); }
-    // Searching covers the whole tab (view and chip ignored, but kept for when the field is cleared);
+    // Searching covers the whole tab (the filters are ignored, but kept for when the field is cleared);
     // its order is the ranking, so the stable order of the browsing list is left as it was.
     const searching = this.query.trim() !== "";
     // The open PRs are grouped by whose move it is (headings among the rows); searching, the Merged
-    // view and the issues are one flat list. `rows` never holds a heading: the selection skips them.
+    // list and the issues are one flat list. The filters decide which rows (and so which headings) are there.
+    const filtered = searching ? items : applyFilters(items, this.filters, { tab: this.tab, config: this.config });
+    // `rows` never holds a heading: the selection skips them.
     if (searching) this.display = search(items, this.query);
-    else if (lookBack) this.display = byMerged(select(items, { tab: this.tab, view: this.view, repo: this.repo }, this.config));
+    else if (lookBack) this.display = byMerged(filtered);
     else {
-      const ordered = stableOrder(select(items, { tab: this.tab, view: this.view, repo: this.repo }, this.config), this.order);
+      const ordered = stableOrder(filtered, this.order);
       this.order = ordered.map(keyOf);
       this.display = this.tab === "pr" ? groupRows(ordered, this.config) : ordered;
     }
@@ -369,9 +402,6 @@ export default class GitHub extends View {
       if (this.display.length) this.scroll.scroll_to_item(Math.max(0, at), at >= 0 ? "center" : "top");
     }
 
-    const { shown, more } = chipsFor(items, this.repo, MAX_CHIPS);
-    const counts = viewCounts(this.prs?.items ?? [], this.repo, this.config);
-    if (this.merged) counts.merged = this.repo ? this.merged.items.filter(i => i.repo === this.repo).length : this.merged.items.length;
     const noun = this.tab === "pr" ? "pull requests" : "issues";
     const days = this.config.mergedDays;
     const span = `${noun} merged in the last ${days === 1 ? "day" : `${days} days`}`;
@@ -414,8 +444,7 @@ export default class GitHub extends View {
         .child(refreshButton(this, t)))
       .when(!this.collapsed, el => el.child(v_flex().h(listH).flex_none().min_h(0).overflow_hidden()
         .child(tabs(this, t))
-        .when(this.tab === "pr" && Boolean(this.prs) && !searching, e => e.child(viewsRow(this, t, counts))) // stays while the Merged list loads
-        .when(items.length > 0 && !searching, e => e.child(chipsRow(this, t, shown, more)))
+        .when(Boolean(this.tab === "pr" ? this.prs : this.issues) && !searching, e => e.child(filtersRow(this, t))) // stays while the Merged list loads
         .when(searching && this.rows.length > 0, e => e.child(note(t, resultsLine(this.rows.length))))
         .when(Boolean(problem), e => e.child(note(t, problem, t.ansi1)))
         .when(Boolean(this.configNote), e => e.child(note(t, this.configNote, t.ansi3)))
@@ -425,8 +454,8 @@ export default class GitHub extends View {
           ? rowsList(this, t, this.display)
           : !data ? emptyState(t, error ? "Press ⟳ to retry." : "Loading…")
           : searching ? noMatch(this, t, parseQuery(this.query), this.query, githubTargets(items, parseQuery(this.query), this.tab))
-          : emptyState(t, lookBack ? (items.length === 0 ? `No ${span}` : `No ${span} in this repository`)
-            : items.length === 0 ? `No open ${noun}` : `No ${noun} match this view`)))
+          : emptyState(t, lookBack ? (items.length === 0 ? `No ${span}` : `No ${span} in ${this.filters.repos.length === 1 ? "this repository" : "these repositories"}`)
+            : items.length === 0 ? `No open ${noun}` : `No ${noun} match these filters`)))
         .child(divider(this, t, listH)))
       .child(detailPane(this, t, actionBar(this, t)));
   }

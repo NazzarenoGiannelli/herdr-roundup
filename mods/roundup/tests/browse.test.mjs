@@ -1,62 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeConfig } from "../config.js";
-import { keyOf, select, viewCounts, stableOrder, chipsFor, ago, shortRepo, priority, errorLine, labelLines, issueRowHeight, parseQuery, search, githubTargets, resultsLine } from "../browse.js";
+import { keyOf, stableOrder, ago, shortRepo, priority, errorLine, labelLines, issueRowHeight, parseQuery, search, githubTargets, resultsLine } from "../browse.js";
 
 const pr = (n, o = {}) => ({ repo: "acme/widgets", number: n, isDraft: false, head: "fix/x", base: "staging",
   author: "sam", labels: [], ci: "success", reviewDecision: null, comments: [], ...o });
 
 test("keyOf", () => assert.equal(keyOf(pr(5)), "acme/widgets#5"));
 
-test("select combines the view and the repo (AND); views apply to PRs only", () => {
-  const items = [
-    pr(1, { isDraft: true }),
-    pr(2, { repo: "acme/gadgets", isDraft: true }),
-    pr(3, { repo: "acme/gadgets" }),
-  ];
-  assert.deepEqual(select(items, { tab: "pr", view: "drafts", repo: null }).map((i) => i.number), [1, 2]);
-  assert.deepEqual(select(items, { tab: "pr", view: "drafts", repo: "acme/gadgets" }).map((i) => i.number), [2]);
-  assert.deepEqual(select(items, { tab: "pr", view: "all", repo: "acme/gadgets" }).map((i) => i.number), [2, 3]);
-  assert.deepEqual(select(items, { tab: "issue", view: "drafts", repo: null }).map((i) => i.number), [1, 2, 3]);
-});
-
-test("select: a view follows the config's labels", () => {
-  const config = normalizeConfig({ labels: { ready: ["ship-it"] } }).config;
-  const items = [pr(1, { ci: "failure", labels: ["ship-it"] }), pr(2, { ci: "failure" })];
-  assert.deepEqual(select(items, { tab: "pr", view: "ready", repo: null }, config).map((i) => i.number), [1]);
-  assert.deepEqual(select(items, { tab: "pr", view: "ready", repo: null }).map((i) => i.number), []);
-});
-
-test("viewCounts counts each view within the chosen repo", () => {
-  const config = normalizeConfig({ labels: { ready: ["ship-it"] }, reviewers: ["claude"] }).config;
-  const items = [
-    pr(1, { isDraft: true, labels: ["ship-it"] }),
-    pr(2, { author: "dependabot", comments: [{ author: "claude", body: "ok", createdAt: "2026-10-31T10:00:00Z" }] }),
-    pr(3, { repo: "acme/gadgets", ci: "pending" }),
-  ];
-  assert.deepEqual(viewCounts(items, null, config), { all: 3, ready: 2, review: 2, deps: 1, drafts: 1 });
-  assert.deepEqual(viewCounts(items, "acme/gadgets", config), { all: 1, ready: 0, review: 1, deps: 0, drafts: 0 });
-  assert.deepEqual(viewCounts(items, null, normalizeConfig({ reviewers: ["claude"] }).config), { all: 3, ready: 1, review: 2, deps: 1, drafts: 1 }, "without the label only the dependency bot's PR is ready");
-});
-
 test("stableOrder keeps the previous order, drops gone rows, appends new ones in fetch order", () => {
   const fresh = [pr(9), pr(1), pr(2), pr(3)];
   const prev = ["acme/widgets#3", "acme/widgets#7", "acme/widgets#1"];
   assert.deepEqual(stableOrder(fresh, prev).map((i) => i.number), [3, 1, 9, 2]);
   assert.deepEqual(stableOrder(fresh, null).map((i) => i.number), [9, 1, 2, 3]);
-});
-
-test("chipsFor shows the top repos, the rest as more, and promotes a chosen one", () => {
-  const items = [];
-  for (const [repo, n] of [["o/a", 5], ["o/b", 4], ["o/c", 3], ["o/d", 2], ["o/e", 1]]) for (let i = 0; i < n; i++) items.push(pr(items.length + 1, { repo }));
-  let r = chipsFor(items, null, 3);
-  assert.deepEqual(r.shown.map((c) => c.repo), ["o/a", "o/b", "o/c"]);
-  assert.deepEqual(r.more.map((c) => c.repo), ["o/d", "o/e"]);
-  r = chipsFor(items, "o/e", 3);
-  assert.deepEqual(r.shown.map((c) => c.repo), ["o/a", "o/b", "o/c", "o/e"]);
-  assert.deepEqual(r.more.map((c) => c.repo), ["o/d"]);
-  r = chipsFor(items, "o/a", 3);
-  assert.deepEqual(r.shown.map((c) => c.repo), ["o/a", "o/b", "o/c"]);
 });
 
 test("ago", () => {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mergedSearch, MERGED_LIST, PR_LIST } from "../queries.js";
 import { DEFAULT_MERGED_DAYS } from "../config.js";
 import { normalizePRs } from "../model.js";
-import { VIEWS, select, byMerged, errorLine } from "../browse.js";
+import { byMerged, errorLine } from "../browse.js";
 
 const node = (extra = {}) => ({
   number: 7, title: "t", url: "u", isDraft: false, updatedAt: "2026-11-01T10:00:00Z",
@@ -45,16 +45,6 @@ test("normalizePRs: a merged node says merged, when, by whom and the method from
 test("normalizePRs: an open PR has no merged fields at all", () => {
   const [pr] = normalizePRs(search([node()])).items;
   for (const k of ["merged", "mergedAt", "mergedBy", "method"]) assert.equal(k in pr, false, k);
-});
-
-test("VIEWS: Merged is the last view", () => {
-  assert.deepEqual(VIEWS.at(-1), { id: "merged", label: "Merged" });
-});
-
-test("select: the Merged view keeps every row of its list, the repo chip still filters", () => {
-  const items = [{ repo: "a/x", number: 1, labels: [] }, { repo: "a/y", number: 2, labels: [] }];
-  assert.equal(select(items, { tab: "pr", view: "merged", repo: null }).length, 2);
-  assert.deepEqual(select(items, { tab: "pr", view: "merged", repo: "a/y" }).map(i => i.number), [2]);
 });
 
 test("byMerged: most recently merged first, the input untouched", () => {

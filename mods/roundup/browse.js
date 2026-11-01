@@ -1,33 +1,12 @@
-// Pure list logic for the Roundup panel: filtering, view counts, stable order.
+// Pure list logic for the Roundup panel: stable order, groups, search. (The filter dropdowns: filters.js.)
 // Imports only ./rules.js and ./config.js (loaded by Node tests and by the Herdr runtime).
 
-import { views, chips, groupOf, GROUP_IDS } from "./rules.js";
+import { chips, groupOf, GROUP_IDS } from "./rules.js";
 import { DEFAULT_CONFIG } from "./config.js";
-
-export const VIEWS = [
-  { id: "all", label: "All" },
-  { id: "ready", label: "Ready to merge" },
-  { id: "review", label: "In review" },
-  { id: "deps", label: "Dependencies" },
-  { id: "drafts", label: "Drafts" },
-  { id: "merged", label: "Merged" }, // its own list (main.js), not a filter of the open PRs
-];
 
 // A heading row has the key `group:<id>`, which no `owner/repo#n` can equal.
 export const keyOf = (item) => item.heading ? `group:${item.group}` : `${item.repo}#${item.number}`;
 export const shortRepo = (repo) => String(repo).split("/").pop();
-
-// Views apply to PRs only; the repo chip applies to both tabs. The two combine (AND).
-export function select(items, { tab, view, repo }, config = DEFAULT_CONFIG) {
-  return items.filter((it) => (!repo || it.repo === repo) && (tab !== "pr" || view === "all" || view === "merged" || views(it, config).includes(view)));
-}
-
-export function viewCounts(prs, repo, config = DEFAULT_CONFIG) {
-  const inRepo = repo ? prs.filter((p) => p.repo === repo) : prs;
-  const counts = { all: inRepo.length, ready: 0, review: 0, deps: 0, drafts: 0 };
-  for (const p of inRepo) for (const v of views(p, config)) counts[v]++;
-  return counts;
-}
 
 // Newest first by updatedAt; rows without a date (or equal dates) keep their order.
 const recent = (items) => items.map((it, i) => [it, i]).sort(([a, i], [b, j]) => {
@@ -35,12 +14,12 @@ const recent = (items) => items.map((it, i) => [it, i]).sort(([a, i], [b, j]) =>
   return x && y && x !== y ? (x < y ? 1 : -1) : i - j;
 }).map(([it]) => it);
 
-// The Merged view: the most recently merged first.
+// The Merged list: the most recently merged first.
 export const byMerged = (items) => [...items].sort((a, b) => String(b.mergedAt ?? "").localeCompare(String(a.mergedAt ?? "")));
 
 // Rows already shown keep their order across a background refresh: previous order first (rows
 // that are gone dropped), then rows that are new, in fetch order. `previous` null re-sorts by
-// updatedAt, newest first (a tab, view or chip change, an explicit refresh, the panel shown again).
+// updatedAt, newest first (a tab or filter change, an explicit refresh, the panel shown again).
 export function stableOrder(items, previous) {
   if (!previous) return recent(items);
   const rank = new Map(previous.map((k, i) => [k, i]));
@@ -78,16 +57,6 @@ export function groupRows(items, config = DEFAULT_CONFIG) {
 export const selectable = (rows) => rows.filter((r) => !isHeading(r));
 // Where `key` sits in `rows`, headings counted (what the list scrolls by); -1 when it is not there.
 export const rowIndex = (rows, key) => rows.findIndex((r) => keyOf(r) === key);
-
-// The first `limit` repos by count as chips; the rest go to the "+ more" menu.
-// A chosen repo from the menu is promoted to a chip so the selection stays visible.
-export function chipsFor(items, selected, limit) {
-  const all = chips(items);
-  const shown = all.slice(0, limit), more = all.slice(limit);
-  const at = more.findIndex((c) => c.repo === selected);
-  if (at >= 0) shown.push(...more.splice(at, 1));
-  return { shown, more };
-}
 
 export function ago(iso, now = Date.now()) {
   const then = Date.parse(iso);
@@ -178,8 +147,8 @@ export function search(items, text) {
   return recent(pool.filter((it) => q.words.every((w) => textOf(it).includes(w))));
 }
 
-// A bare number with no open match: where it could still be, one URL per repository currently
-// shown as a chip (or the one named in the query). Nothing for any other kind of query.
+// A bare number with no open match: where it could still be, one URL per repository of the
+// list (or the one named in the query). Nothing for any other kind of query.
 export function githubTargets(items, parsed, tab) {
   if (parsed.number == null || parsed.words.length > 0) return [];
   const kind = tab === "pr" ? "pull" : "issues";
