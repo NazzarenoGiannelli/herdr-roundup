@@ -83,7 +83,8 @@ function row(p, t, item, selected) {
     .when(selected, el => el.bg(t.selected)).hover(s => s.bg(t.hover))
     .when(isPR && item.isDraft, el => el.opacity(0.55))
     // An issue has no CI: an empty spacer keeps titles aligned with the PR tab.
-    .child(isPR ? div().size(8).flex_none().rounded(4).bg(item.merged ? MERGED_COLOR : ciColor(t, item.ci)) : div().size(8).flex_none())
+    .child(isPR && !item.merged && item.ci === "pending" ? ciSpinner(t)
+      : div().w(10).flex_none().flex().justify_center().child(isPR ? div().size(8).rounded(4).bg(item.merged ? MERGED_COLOR : ciColor(t, item.ci)) : div().size(8)))
     .child(v_flex().flex_1().min_w(0).gap(2)
       .child(h_flex().gap(6).items_center()
         .child(div().flex_1().min_w(0).truncate().child(item.title))
@@ -125,6 +126,9 @@ export function noMatch(p, t, parsed, text, targets) {
 // A braille spinner drawn from text frames: no picture file, so nothing outside this mod is needed.
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 export const spinner = (t) => div().w(14).flex_none().text_color(t.muted).frames(SPINNER, 90);
+// The row's mark while CI runs: an amber circle that turns, in the dot's place (the same 10 px slot).
+const CI_FRAMES = ["◐", "◓", "◑", "◒"];
+const ciSpinner = (t) => div().w(10).flex_none().flex().items_center().justify_center().text_size(11).text_color(t.ansi3).frames(CI_FRAMES, 160);
 
 export function refreshButton(p, t) {
   return div().id("gh-refresh").w(28).h(26).flex().items_center().justify_center().rounded(6).cursor_pointer().flex_none()

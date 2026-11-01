@@ -17,6 +17,7 @@ import { detailPane, divider } from "./detail.js";
 import { ensureAvatars } from "./avatars.js";
 import { splitKey, clampListHeight, dragHeight, capDetail } from "./detail-logic.js";
 import { nextKey, dropGone, mergeRetryDelay, wantsMergeRetry, siblingKeys } from "./actions-logic.js";
+import { listPollMs, wantsLiveDetail, ciSettled } from "./live-logic.js";
 import { actionBar, mergeMenu, startMergeMenu, ensureRepoInfo, ensureBehind, forgetRepoErrors, applyPick, closeComment, disarm, SHARED_PICK } from "./actions.js";
 
 const MOD = "roundup";                 // this mod's folder: the layout block that hosts the panel names it
@@ -122,7 +123,7 @@ export default class GitHub extends View {
     // Nothing is fetched while the panel is hidden: the first show is caught by sync().
     this.shown = false;
     this.sync(cx);
-    cx.timer.every(WATCH_MS, cx => this.sync(cx));
+    cx.timer.every(WATCH_MS, cx => { this.sync(cx); this.followChecks(cx); });
   }
 
   // Called by the watch timer and by render. hidden -> visible: refresh and re-sort;
@@ -132,9 +133,20 @@ export default class GitHub extends View {
   sync(cx, inRender = false) {
     if (!visible()) { this.shown = false; return; }
     if (!this.shown) { this.shown = true; this.refresh(cx, true, inRender); }
-    else if (Date.now() - this.lastAttempt >= POLL_MS) this.refresh(cx, false, inRender);
+    // Every minute, every 30 seconds while a pull request in the list has CI running (live-logic.js).
+    else if (Date.now() - this.lastAttempt >= listPollMs(this.prs?.items)) this.refresh(cx, false, inRender);
     // The Merged view just opened (or its list is a minute old): fetch it now, not at the next poll.
     else if (this.wantsMerged() && !this.loading && Date.now() - this.mergedTried >= POLL_MS) this.refresh(cx, false, inRender);
+  }
+
+  // While the selected pull request's checks run, its detail is read again every LIVE_DETAIL_MS: the
+  // watch timer calls this, and the render that follows loads it (loadDetail sees the cleared stamp).
+  followChecks(cx) {
+    if (this.tab !== "pr" || !this.shown) return;
+    const entry = this.detailEntry();
+    if (!wantsLiveDetail(entry, Date.now())) return;
+    entry.stamp = null; entry.liveDue = true;
+    cx.notify();
   }
 
   // One fetch in flight at a time. A failure keeps the last good list and only sets `error`.
@@ -208,7 +220,8 @@ export default class GitHub extends View {
     const key = this.selected, old = this.details.get(key);
     const retry = Boolean(old?.retryDue) && old.stamp === item.updatedAt;
     if (old && old.stamp === item.updatedAt && !retry) return;
-    const entry = { detail: old?.detail ?? null, error: null, stamp: item.updatedAt, loading: true, tries: retry ? (old.tries ?? 0) + 1 : 0, retryDue: false };
+    // `live`: a re-read while checks run (followChecks): quiet, no "Refreshing…" line.
+    const entry = { detail: old?.detail ?? null, error: null, stamp: item.updatedAt, loading: true, tries: retry ? (old.tries ?? 0) + 1 : 0, retryDue: false, live: Boolean(old?.liveDue) && Boolean(old?.detail) };
     this.details.delete(key); this.details.set(key, entry);
     for (const k of this.details.keys()) { if (this.details.size <= DETAILS_KEPT) break; if (k !== key) this.details.delete(k); }
     this.detailBusy = key;
@@ -218,7 +231,9 @@ export default class GitHub extends View {
     cx.spawn(async cx => {
       try { entry.detail = capDetail(await fetchDetail(item.repo, item.number, kind)); }
       catch (e) { entry.error = message(e); }
-      entry.loading = false; this.detailBusy = null;
+      entry.loading = false; this.detailBusy = null; entry.at = Date.now();
+      // CI finished since the list was read: the row's dot is out of date, read the list again.
+      if (!entry.error && kind === "pr" && ciSettled(item.ci, entry.detail?.ci)) this.refresh(cx, false);
       if (!entry.error && wantsMergeRetry(entry.detail, entry.tries)) this.scheduleMergeRetry(key, entry, cx);
       cx.notify();
     });

@@ -9,6 +9,7 @@ import { MERGED_COLOR, spinner } from "./list.js";
 import { isReviewer } from "./config.js";
 import { behindOf } from "./actions.js";
 import { behindLine } from "./update-logic.js";
+import { checkRows, checkMark } from "./live-logic.js";
 import { whenLabel, windowTimeline, planBodies, reviewLabel, reviewInput, ciChip, reviewStateLabel, hasOlderActivity, initial, descriptionCap, ENTRY_MAX, threadBudgetFor } from "./detail-logic.js";
 
 const tone = (t, name) => name === "good" ? t.ansi2 : name === "bad" ? t.ansi1 : name === "warn" ? t.ansi3 : t.dim;
@@ -53,6 +54,20 @@ function header(p, t, item, detail) {
         .child(div().text_color(t.ansi1).child(`−${detail.deletions}`))
         .child(div().child(`· ${detail.changedFiles} ${detail.changedFiles === 1 ? "file" : "files"}`))))))
     .when(item.labels.length > 0, el => el.child(h_flex().gap(4).flex_wrap().children(item.labels.map(l => chip(t, l)))));
+}
+
+// The checks, while something runs or has failed: failed first, then running (with a spinner), then
+// the rest. The detail is read again every 15 seconds while one runs (main.js followChecks).
+function checksList(p, t, detail) {
+  const rows = checkRows(detail?.checks);
+  if (rows.length === 0) return null;
+  const color = (s) => s === "success" ? t.ansi2 : s === "failure" ? t.ansi1 : s === "pending" ? t.ansi3 : t.dim;
+  return v_flex().flex_none().gap(3)
+    .child(div().text_size(11).font_semibold().text_color(t.dim).child("CHECKS"))
+    .children(rows.map(r => h_flex().gap(6).items_center().text_size(11.5).min_w(0)
+      .child(checkMark(r.state) === null ? spinner(t).w(12).text_color(color(r.state))
+        : div().w(12).flex_none().text_color(color(r.state)).child(checkMark(r.state)))
+      .child(div().flex_1().min_w(0).truncate().text_color(r.state === "failure" ? t.foreground : t.muted).child(r.name))));
 }
 
 // A markdown block; `id` stays the same for the same text, so the view keeps its state.
@@ -140,10 +155,11 @@ export function detailPane(p, t, actions) {
   return v_flex().id("gh-detail").flex_1().min_h(0)
     .child(v_flex().id(`gh-scroll-${key}`).flex_1().min_h(0).overflow_y_scrollbar().p(12).gap(12)
       .child(header(p, t, item, detail))
+      .when(p.tab === "pr" && !item.merged && Boolean(checksList(p, t, detail)), el => el.child(checksList(p, t, detail)))
       .when(entryState?.error && !detail, el => el.child(div().text_size(12).text_color(t.ansi1).child(`Couldn't load the details: ${entryState.error} · Press ⟳ to retry.`)))
       .when(entryState?.error && Boolean(detail), el => el.child(div().text_size(11.5).text_color(t.ansi1).child(`Couldn't refresh the details: ${entryState.error} · showing the last version.`)))
       .when(!detail && !entryState?.error, el => el.child(h_flex().gap(8).items_center().text_size(12).text_color(t.dim).child(spinner(t)).child("Loading…")))
-      .when(Boolean(detail) && entryState?.loading, el => el.child(h_flex().gap(8).items_center().text_size(11.5).text_color(t.dim).child(spinner(t)).child("Refreshing…")))
+      .when(Boolean(detail) && entryState?.loading && !entryState?.live, el => el.child(h_flex().gap(8).items_center().text_size(11.5).text_color(t.dim).child(spinner(t)).child("Refreshing…")))
       .when(Boolean(detail), el => {
         const log = timeline(p, t, key, item, detail);
         el = el.child(description(p, t, item, detail));

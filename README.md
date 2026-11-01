@@ -85,6 +85,12 @@ If GitHub answers a list with results and an error as well (an organization that
   - `Ctrl+Enter` sends a comment, `Esc` closes the box and keeps the text.
 - **Search:** `130` or `#130`, `widgets#130`, `acme/widgets#130`, or words from the title, repository or labels. It covers the whole tab and ignores the filters; clearing it brings the filtered list back.
 
+## Following CI
+
+- **In the list**, a pull request whose CI is running shows an amber circle that turns where its dot would be.
+- **In the detail**, while a check runs or has failed, a `CHECKS` list names each one: failed first (✗), then running (spinner), then the rest (✓). When everything passed, the CI chip says so and the list stays out of the way.
+- **How live it is.** GitHub can't push to a panel on your machine, so Roundup looks again: the selected pull request every 15 seconds while one of its checks runs, the list every 30 seconds while any pull request in it has CI running, and every minute otherwise. When the checks finish, the list is read again so the row's dot catches up.
+
 ## Merging
 
 - **Two clicks.** The first click arms the button and it asks to confirm. The second merges. Esc, a click elsewhere or selecting another item cancels. A second click within half a second of the first is ignored.
