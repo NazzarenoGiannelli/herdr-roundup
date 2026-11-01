@@ -110,7 +110,7 @@ Two mod folders, copied to `~/.config/herdr-app/mods/`. No layout and no `keys.j
 - **Windows command line.** `gh` gets the comment text as an argument and Windows caps the line near 32,000 characters, so a comment is limited to 30,000.
 - **Render cost.** Long markdown is re-parsed on every render. The description and thread together are capped at 24,000 characters; one comment at 8,000. Dragging the divider repaints at most every 45 ms.
 - **Limits.** 100 results per list (the note says when there are more), 50 timeline entries shown at once (100 fetched), 15 cached details, 50 dry-run log lines. A rebase merge looks like a squash in history, so the default never picks rebase on its own.
-- **Not in this build.** It does not close, reopen, review or approve, and does not change labels or assignees. The Merged list has no actions beyond copy and open. `labels.review` is accepted but changes nothing. Linux and macOS are not confirmed.
+- **Not in this build.** It does not close, reopen, review or approve, and does not change labels or assignees. The Merged list has no actions beyond copy and open. Linux and macOS are not confirmed.
 - **Assumes** `gh` is installed and signed in with access to the owners it lists, and `curl` for pictures.
 
 ## Done when

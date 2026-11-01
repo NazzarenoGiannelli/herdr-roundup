@@ -57,7 +57,8 @@ export function groupOf(pr, config = DEFAULT_CONFIG) {
   if (pr.isDraft) return "drafts";
   if (views(pr, config).includes("ready")) return "ready";
   const review = reviewState(pr, config);
-  if (review === "none" && pr.ci !== "failure") return "review";
+  // Waiting for a review: nobody has reviewed it yet, or it carries a `labels.review` label.
+  if (pr.ci !== "failure" && review !== "changes" && (review === "none" || hasLabel(pr.labels, config.labels.review))) return "review";
   if (pr.ci === "failure" || review === "changes") return "fixing";
   if (pr.ci === "pending") return "waiting";
   return "ready";

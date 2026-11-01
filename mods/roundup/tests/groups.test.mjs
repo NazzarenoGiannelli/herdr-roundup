@@ -195,3 +195,18 @@ test("preflight: the abort reason names the checks too", () => {
   const armed = { draft: false, headOid: "aaa", base: "main", head: "fix/x" };
   assert.equal(preflight(armed, detail({ ci: "failure", checks: [chk("test", "failure")] }), pr(1)), "CI failing: test");
 });
+
+test("groupOf: a labels.review label keeps a reviewed PR in To review, unless CI fails or changes are requested", () => {
+  const config = normalizeConfig({ labels: { review: ["needs-review"] } }).config;
+  const base = { ci: "success", reviewDecision: null, labels: ["needs-review"], comments: [{ author: "sam", body: "looks fine", createdAt: "2026-01-01T00:00:00Z" }] };
+  assert.equal(group({ ...base, reviewDecision: "REVIEW_REQUIRED" }, config), "review");
+  assert.equal(group({ ...base, ci: "failure" }, config), "fixing");
+  assert.equal(group({ ...base, reviewDecision: "CHANGES_REQUESTED" }, config), "fixing");
+});
+
+test("groupOf: with labels.review, an approved PR whose CI still runs is To review, not Waiting", () => {
+  const withLabel = normalizeConfig({ labels: { review: ["needs-review"] } }).config;
+  const p = { ci: "pending", reviewDecision: "APPROVED", labels: ["needs-review"] };
+  assert.equal(group(p), "waiting");
+  assert.equal(group(p, withLabel), "review");
+});
