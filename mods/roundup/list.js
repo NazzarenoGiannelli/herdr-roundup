@@ -3,7 +3,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, v_virtual_list, Input } from "gpui-base";
 import { keyOf, shortRepo, ago, priority, ROW_H, issueRowHeight, HEADING_H, isHeading } from "./browse.js";
-import { statusLabel, reposLabel, isAllStatus, nextRow } from "./filters.js";
+import { statusLabel, reposLabel, isAllStatus, nextRow, statusMenuHeight, reposMenuHeight } from "./filters.js";
 
 // Room for an issue row's label chips: panel width minus list padding (8), row padding (20), dot and gap (17), scrollbar (12).
 const chipRoom = (p) => (p.size?.width ?? 560) - 57;
@@ -142,9 +142,11 @@ export function collapseButton(p, t) {
 
 // A popup of checkboxes (the Status and Repos menus). `rows` come from filters.js; `p.toggle(row, cx)`
 // applies a click or Enter/Space at once and the popup stays open. Disabled rows are greyed and skipped by ↑/↓.
-function checkMenu(p, t, id, rows) {
+// `height`: the popup's own height. Herdr sizes a popup by its content, and a scrolling column has no
+// height of its own, so without it the menu collapses to a line.
+function checkMenu(p, t, id, rows, height) {
   const press = (row, cx) => { if (!row.disabled) p.toggle(row, cx); };
-  return v_flex().id(id).track_focus(p.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8).overflow_y_scrollbar()
+  return v_flex().id(id).track_focus(p.handle).w_full().h(height).min_h(0).p(5).bg(t.popover).text_size(12.8).overflow_y_scrollbar()
     .on_key_down((e, cx) => {
       if (e.key === "down") p.at = nextRow(rows, p.at, 1);
       else if (e.key === "up") p.at = nextRow(rows, p.at, -1);
@@ -169,19 +171,21 @@ function checkMenu(p, t, id, rows) {
 
 // The "Status ▾" popup: All, one checkbox per group with its count, Dependencies, then Merged.
 export function statusMenu(p, t) {
-  return checkMenu(p, t, "roundup-status-menu", p.statusRows());
+  const rows = p.statusRows();
+  return checkMenu(p, t, "roundup-status-menu", rows, statusMenuHeight(rows));
 }
 
 // The "Repos ▾" popup: All, then every repository of the list, most items first.
 export function reposMenu(p, t) {
-  return checkMenu(p, t, "roundup-repos-menu", p.reposRows());
+  const rows = p.reposRows();
+  return checkMenu(p, t, "roundup-repos-menu", rows, reposMenuHeight(rows));
 }
 
 // The "Open on GitHub ▾" popup: one row per repository, opens that URL.
 export function targetsMenu(p, t) {
   const list = p.menuTargets;
   const open = (cx, target) => { cx.open_url(target.url); p.closeMenu(); };
-  return v_flex().id("roundup-targets").track_focus(p.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8).overflow_y_scrollbar()
+  return v_flex().id("roundup-targets").track_focus(p.handle).w_full().h(Math.min(list.length, 12) * 31 + 12).min_h(0).p(5).bg(t.popover).text_size(12.8).overflow_y_scrollbar()
     .on_key_down((e, cx) => {
       if (e.key === "down") p.at = (p.at + 1) % list.length;
       else if (e.key === "up") p.at = (p.at + list.length - 1) % list.length;
