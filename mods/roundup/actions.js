@@ -261,15 +261,16 @@ export function actionBar(p, t) {
     .when(isDryRun(), el => el.child(div().text_size(11.5).text_color(t.ansi3).child("Dry run — nothing will be merged")))
     .when(p.comment?.key === key, el => el.child(commentBox(p, t)))
     .when(p.notice?.key === key, el => el.child(div().text_size(11.5).text_color(p.notice.level === "error" ? t.ansi1 : t.ansi3).child(p.notice.text)))
-    // PRs: what the merge button will do (or why it can't) on the left, the button on the right.
-    .when(Boolean(v), el => el.child(h_flex().gap(10).items_center()
-      .child(div().flex_1().min_w(0).text_size(11.5).text_color(note?.color ?? t.dim).child(note?.text ?? ""))
-      .child(mergeButton(p, t, v))))
+    // What the merge button will do, or why it can't: a line of its own, only when there is something to say.
+    .when(Boolean(note), el => el.child(div().text_size(11.5).text_color(note.color).child(note.text)))
+    // One row: copy, open and comment on the left, the merge button on the right. When a long label
+    // ("Confirm mark ready and squash and merge") doesn't fit, the merge button wraps to its own line.
     .child(h_flex().gap(6).flex_wrap().items_center()
       .child(button(t, "gh-copy-ref", `⧉ #${item.number}`, cx => copy(cx, "reference", refText(item))))
       .child(button(t, "gh-copy-url", "⧉ URL", cx => copy(cx, "URL", item.url)))
       .child(button(t, "gh-open", "↗ GitHub", cx => cx.open_url(item.url)))
-      .when(!item.merged, el => el.child(button(t, "gh-comment", "💬 Comment", cx => openComment(p, cx)))));
+      .when(!item.merged, el => el.child(button(t, "gh-comment", "💬 Comment", cx => openComment(p, cx))))
+      .when(Boolean(v), el => el.child(div().ml_auto().flex_none().child(mergeButton(p, t, v)))));
 }
 
 // --- the merge popup (opened with props { menu: "merge", key, choices }) ----------------------------
