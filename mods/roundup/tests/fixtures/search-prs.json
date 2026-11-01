@@ -1,0 +1,142 @@
+{
+  "data": {
+    "search": {
+      "issueCount": 47,
+      "nodes": [
+        {
+          "number": 130,
+          "title": "Fixes #82: date picker keeps keyboard focus and closes when its trigger scrolls away",
+          "url": "https://github.com/acme/gadgets/pull/130",
+          "isDraft": false,
+          "updatedAt": "2026-10-31T05:06:49Z",
+          "headRefName": "fix/picker-focus",
+          "baseRefName": "main",
+          "reviewDecision": null,
+          "author": {
+            "login": "sam"
+          },
+          "repository": {
+            "nameWithOwner": "acme/gadgets"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "priority-low"
+              },
+              {
+                "name": "ship-it"
+              }
+            ]
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "comments": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "claude"
+                },
+                "createdAt": "2026-10-31T04:07:28Z",
+                "bodyText": "Review\nA clean, small change. The helpers are easy to test and the tests cover their edge cases. No security concerns. Two minor points:\nWhen the panel closes on scroll, focus is lost to the page body. Consider moving it back to the trigger.\nTab from outside the picker jumps into it while the panel is open. Only intercept Tab when focus is already inside.\n\nNice work. Nothing here blocks merging."
+              },
+              {
+                "author": {
+                  "login": "sam"
+                },
+                "createdAt": "2026-10-31T05:06:41Z",
+                "bodyText": "Thanks. Both points are small, I will do them in a follow-up. Labelled ship-it."
+              }
+            ]
+          }
+        },
+        {
+          "number": 46,
+          "title": "Onboarding page for new partners",
+          "url": "https://github.com/acme/site/pull/46",
+          "isDraft": true,
+          "updatedAt": "2026-10-28T08:35:20Z",
+          "headRefName": "feat/onboarding",
+          "baseRefName": "main",
+          "reviewDecision": null,
+          "author": {
+            "login": "sam"
+          },
+          "repository": {
+            "nameWithOwner": "acme/site"
+          },
+          "labels": {
+            "nodes": []
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          },
+          "comments": {
+            "nodes": [
+              {
+                "author": {
+                  "login": "preview-bot"
+                },
+                "createdAt": "2026-10-27T22:24:36Z",
+                "bodyText": "Preview deployment ready. https://preview.example.com/onboarding"
+              }
+            ]
+          }
+        },
+        {
+          "number": 431,
+          "title": "chore(deps): Bump the minor-and-patch group across 1 directory with 2 updates",
+          "url": "https://github.com/acme/widgets/pull/431",
+          "isDraft": false,
+          "updatedAt": "2026-10-26T16:54:10Z",
+          "headRefName": "dependabot/npm_and_yarn/staging/minor-and-patch-3fc39615ad",
+          "baseRefName": "staging",
+          "reviewDecision": null,
+          "author": {
+            "login": "dependabot"
+          },
+          "repository": {
+            "nameWithOwner": "acme/widgets"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "dependencies"
+              }
+            ]
+          },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE"
+                  }
+                }
+              }
+            ]
+          },
+          "comments": {
+            "nodes": []
+          }
+        }
+      ]
+    }
+  }
+}

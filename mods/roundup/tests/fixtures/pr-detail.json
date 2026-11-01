@@ -1,0 +1,98 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "body": "## What\nThe picker panel lives in a portal on `document.body`, outside the modal's tab order.\n- Tab / Shift+Tab walk trigger → rows → trigger (`nextStop` in `src/panelPlace.js`); Escape closes the panel and returns focus to the trigger (the modal stays open, as before).\n- The panel closes when its trigger scrolls wholly out of the window or of its scrolling ancestor (`outOfSight`).\n\n## Tests\nCovered: `nextStop` and `outOfSight` as pure functions plus a source guard for the wiring (`npm run test:panel-place`).\nNot covered: real focus movement in a browser; worth a 30-second manual check in the modal.",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "additions": 60,
+        "deletions": 3,
+        "changedFiles": 3,
+        "commits": {
+          "nodes": [
+            {
+              "commit": {
+                "statusCheckRollup": {
+                  "state": "SUCCESS",
+                  "contexts": {
+                    "totalCount": 3,
+                    "nodes": [
+                      {
+                        "__typename": "CheckRun",
+                        "name": "check",
+                        "conclusion": "SUCCESS",
+                        "status": "COMPLETED"
+                      },
+                      {
+                        "__typename": "CheckRun",
+                        "name": "claude-review",
+                        "conclusion": "SUCCESS",
+                        "status": "COMPLETED"
+                      },
+                      {
+                        "__typename": "CheckRun",
+                        "name": "deploy",
+                        "conclusion": "SKIPPED",
+                        "status": "COMPLETED"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "timelineItems": {
+          "nodes": [
+            {
+              "__typename": "LabeledEvent",
+              "actor": {
+                "login": "sam"
+              },
+              "createdAt": "2026-10-31T04:06:40Z",
+              "label": {
+                "name": "priority-low"
+              }
+            },
+            {
+              "__typename": "IssueComment",
+              "author": {
+                "login": "claude"
+              },
+              "createdAt": "2026-10-31T04:07:28Z",
+              "body": "## Review\n\nOverall this is a clean, small change. The pure helpers (`outOfSight`, `nextStop`) are easy to test and the tests cover their edge cases. No security concerns. A few points, mostly minor:\n\n**Behaviour**\n- When the panel closes via `outOfSight`, focus is not restored. If focus was on a row, it is lost to `<body>`, because the row unmounts. Consider moving focus to the trigger. Escape already does this.\n- `nextStop` with `at = -1` makes Tab from any element outside the picker jump into it while the panel is open. Only intercept Tab when focus is already inside.\n\n**Tests**\n- The pure-function tests are good. The source-regex guard is brittle: any reformat will break it without a behaviour change.\n\nNice work. Nothing here blocks merging."
+            },
+            {
+              "__typename": "LabeledEvent",
+              "actor": {
+                "login": "github-actions"
+              },
+              "createdAt": "2026-10-31T04:07:35Z",
+              "label": {
+                "name": "awaiting-followup"
+              }
+            },
+            {
+              "__typename": "IssueComment",
+              "author": {
+                "login": "sam"
+              },
+              "createdAt": "2026-10-31T05:06:41Z",
+              "body": "Thanks for the review. Both focus points are small and out of scope here; I will track them in a follow-up issue.\n\nLabelled `ship-it`."
+            },
+            {
+              "__typename": "LabeledEvent",
+              "actor": {
+                "login": "sam"
+              },
+              "createdAt": "2026-10-31T05:06:42Z",
+              "label": {
+                "name": "ship-it"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

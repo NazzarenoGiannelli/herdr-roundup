@@ -1,0 +1,75 @@
+{
+  "data": {
+    "search": {
+      "issueCount": 97,
+      "nodes": [
+        {
+          "number": 131,
+          "title": "Epic: sign-in with a team account, and each team's work kept apart (phase 3)",
+          "url": "https://github.com/acme/gadgets/issues/131",
+          "updatedAt": "2026-10-31T13:35:37Z",
+          "author": {
+            "login": "sam"
+          },
+          "repository": {
+            "nameWithOwner": "acme/gadgets"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "enhancement"
+              },
+              {
+                "name": "priority-medium"
+              },
+              {
+                "name": "needs-decision"
+              }
+            ]
+          }
+        },
+        {
+          "number": 427,
+          "title": "Nightly staging tests failing",
+          "url": "https://github.com/acme/widgets/issues/427",
+          "updatedAt": "2026-10-31T08:47:02Z",
+          "author": {
+            "login": "github-actions"
+          },
+          "repository": {
+            "nameWithOwner": "acme/widgets"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "priority-high"
+              },
+              {
+                "name": "nightly-failure"
+              }
+            ]
+          }
+        },
+        {
+          "number": 411,
+          "title": "Open decisions: summary (2026-10-17)",
+          "url": "https://github.com/acme/widgets/issues/411",
+          "updatedAt": "2026-10-31T04:06:54Z",
+          "author": {
+            "login": "sam"
+          },
+          "repository": {
+            "nameWithOwner": "acme/widgets"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "decision-digest"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

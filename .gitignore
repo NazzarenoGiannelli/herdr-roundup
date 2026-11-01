@@ -1,0 +1,7 @@
+# Herdr ships these type files with the app; they are regenerated there.
+*.d.ts
+node_modules/
+.superpowers/
+
+# Your own settings; config.example.json is the template.
+mods/roundup/config.json

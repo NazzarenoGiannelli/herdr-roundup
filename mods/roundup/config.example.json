@@ -1,0 +1,11 @@
+{
+  "_owners": "Remove the underscore and list your own GitHub login and organizations to narrow the list, for example [\"your-login\", \"your-organization\"]. Left out, the list covers your repositories and every organization you belong to.",
+  "stagingFlow": false,
+  "labels": {
+    "ready": ["ship-it"],
+    "review": ["needs-review"],
+    "deps": ["dependencies"]
+  },
+  "reviewers": ["claude"],
+  "mergedDays": 7
+}
