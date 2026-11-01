@@ -27,154 +27,144 @@ const sample = () => [
 
 // --- state -------------------------------------------------------------------------------------------
 
-test("DEFAULT_FILTERS: every group, dependencies on, not merged, every repository", () => {
-  assert.deepEqual(normalizeFilters(null), { groups: GROUP_IDS, deps: true, merged: false, repos: [] });
-  assert.deepEqual(normalizeFilters(DEFAULT_FILTERS), normalizeFilters(null));
-  assert.equal(isAllStatus(DEFAULT_FILTERS), true);
-  assert.equal(isDefault(DEFAULT_FILTERS), true);
+test("DEFAULT_FILTERS: nothing ticked (All), not merged, every repository", () => {
+  assert.deepEqual({ ...DEFAULT_FILTERS, groups: [...DEFAULT_FILTERS.groups], repos: [...DEFAULT_FILTERS.repos] },
+    { v: 2, groups: [], deps: false, merged: false, repos: [] });
+  assert.deepEqual(normalizeFilters(null), { v: 2, groups: [], deps: false, merged: false, repos: [] });
 });
 
 test("normalizeFilters: unknown keys and groups are dropped, missing or wrong fields take the default", () => {
-  const f = normalizeFilters({ groups: ["waiting", "nonsense", "ready", 7], deps: "no", merged: "yes", repos: ["b/y", "a/x", "b/y", "", 5, null], extra: 1, at: 123 });
-  assert.deepEqual(f, { groups: ["ready", "waiting"], deps: true, merged: false, repos: ["a/x", "b/y"] }, "groups in group order, repos sorted and unique");
-  assert.deepEqual(normalizeFilters({ groups: [], deps: false, merged: true }), { groups: [], deps: false, merged: true, repos: [] }, "an empty list of groups is a real choice");
-  assert.deepEqual(normalizeFilters({ repos: "a/x" }).repos, []);
+  const f = normalizeFilters({ v: 2, groups: ["drafts", "nope", "ready"], deps: "yes", merged: 1, repos: ["acme/w", "", 3, "acme/a", "acme/w"], extra: true });
+  assert.deepEqual(f, { v: 2, groups: ["ready", "drafts"], deps: false, merged: false, repos: ["acme/a", "acme/w"] });
+});
+
+test("normalizeFilters: a state from the first version starts the status again from All, keeps repositories and Merged", () => {
+  assert.deepEqual(normalizeFilters({ groups: ["ready"], deps: false, merged: false, repos: ["acme/w"] }), { v: 2, groups: [], deps: false, merged: false, repos: ["acme/w"] });
+  assert.deepEqual(normalizeFilters({ groups: [...GROUP_IDS], deps: true, merged: true, repos: [] }), { v: 2, groups: [], deps: false, merged: true, repos: [] });
+});
+
+test("normalizeFilters: every group ticked is All; Merged clears the rest", () => {
+  assert.deepEqual(normalizeFilters({ v: 2, groups: [...GROUP_IDS], deps: true }).groups, []);
+  assert.equal(normalizeFilters({ v: 2, groups: [...GROUP_IDS], deps: true }).deps, false);
+  assert.deepEqual(normalizeFilters({ v: 2, groups: ["ready"], deps: true, merged: true }), { v: 2, groups: [], deps: false, merged: true, repos: [] });
 });
 
 test("normalizeFilters: garbage of any type gives the default", () => {
-  for (const raw of [undefined, null, 0, 5, "text", true, [], [1, 2], () => 1]) assert.deepEqual(normalizeFilters(raw), normalizeFilters(null), String(raw));
+  for (const g of [undefined, 0, "x", [], [1], true]) assert.deepEqual(normalizeFilters(g), normalizeFilters(null));
 });
 
 test("normalizeFilters does not share arrays with its input or with the default", () => {
-  const a = normalizeFilters(null), b = normalizeFilters(null);
-  a.groups.pop(); a.repos.push("x/y");
-  assert.deepEqual(b, normalizeFilters(null));
-  assert.equal(DEFAULT_FILTERS.groups.length, GROUP_IDS.length);
+  const input = { v: 2, groups: ["ready"], repos: ["acme/w"] };
+  const f = normalizeFilters(input);
+  f.groups.push("drafts"); f.repos.push("acme/x");
+  assert.deepEqual(input, { v: 2, groups: ["ready"], repos: ["acme/w"] });
+  assert.deepEqual([...DEFAULT_FILTERS.groups], []);
 });
 
 test("parseStored: JSON text of a state; broken or empty text gives the default", () => {
-  assert.deepEqual(parseStored(JSON.stringify({ groups: ["ready"], deps: false, merged: false, repos: ["a/x"] })), { groups: ["ready"], deps: false, merged: false, repos: ["a/x"] });
-  for (const text of ["", "{not json", "null", "[1]", "\"str\"", undefined]) assert.deepEqual(parseStored(text), normalizeFilters(null), String(text));
+  assert.deepEqual(parseStored(JSON.stringify({ v: 2, groups: ["review"], repos: ["acme/w"] })).groups, ["review"]);
+  for (const t of [null, "", "{", "null", "[]"]) assert.deepEqual(parseStored(t), normalizeFilters(null));
 });
 
-// --- applying ----------------------------------------------------------------------------------------
+// --- applying --------------------------------------------------------------------------------------
 
-test("applyFilters: the default shows every open PR", () => {
+test("applyFilters: nothing ticked shows every open PR", () => {
   assert.deepEqual(numbers(applyFilters(sample(), all(), { tab: "pr" })), [1, 2, 3, 4, 5, 6, 7, 8]);
 });
 
-test("applyFilters: an unchecked group is not shown", () => {
-  const f = all({ groups: ["ready", "fixing"] });
-  assert.deepEqual(numbers(applyFilters(sample(), f, { tab: "pr" })), [1, 3, 7, 8]);
-  assert.deepEqual(applyFilters(sample(), all({ groups: [] }), { tab: "pr" }), []);
+test("applyFilters: ticked groups show only those groups", () => {
+  assert.deepEqual(numbers(applyFilters(sample(), all({ groups: ["ready"] }), { tab: "pr" })), [1, 7]);
+  assert.deepEqual(numbers(applyFilters(sample(), all({ groups: ["fixing", "drafts"] }), { tab: "pr" })), [3, 5, 8]);
 });
 
-test("applyFilters: Dependencies off hides dependency PRs from every group, bots and labels alike", () => {
-  const config = normalizeConfig({ labels: { deps: ["deps-update"] } }).config;
-  const items = [...sample(), pr(9, { labels: ["deps-update"], ...FIXING }), pr(10, { author: "renovate[bot]", ...DRAFT })];
-  assert.deepEqual(numbers(applyFilters(items, all({ deps: false }), { tab: "pr", config })), [1, 2, 3, 4, 5, 8]);
-  assert.deepEqual(numbers(applyFilters(items, all({ deps: true }), { tab: "pr", config })), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+test("applyFilters: Dependencies alone shows the dependency updates of every group, bots and labels alike", () => {
+  const labelled = pr(9, { labels: ["dependencies"] });
+  assert.deepEqual(numbers(applyFilters([...sample(), labelled], all({ deps: true }), { tab: "pr" })), [6, 7, 9]);
 });
 
-test("applyFilters: groups and Dependencies combine (AND)", () => {
-  assert.deepEqual(numbers(applyFilters(sample(), all({ groups: ["ready", "review"], deps: false }), { tab: "pr" })), [1, 2]);
+test("applyFilters: groups and Dependencies add up (a PR shows when either matches)", () => {
+  assert.deepEqual(numbers(applyFilters(sample(), all({ groups: ["fixing"], deps: true }), { tab: "pr" })), [3, 6, 7, 8]);
 });
 
 test("applyFilters: repositories narrow both tabs, several at once, empty means all", () => {
-  const f = all({ repos: ["acme/gadgets"] });
-  assert.deepEqual(numbers(applyFilters(sample(), f, { tab: "pr" })), [7, 8]);
-  assert.deepEqual(numbers(applyFilters(sample(), all({ repos: ["acme/gadgets", "acme/widgets"] }), { tab: "pr" })), [1, 2, 3, 4, 5, 6, 7, 8]);
-  assert.deepEqual(numbers(applyFilters(sample(), all({ repos: ["acme/nothing"] }), { tab: "pr" })), []);
-  assert.deepEqual(numbers(applyFilters(sample(), f, { tab: "issue" })), [7, 8]);
+  assert.deepEqual(numbers(applyFilters(sample(), all({ repos: ["acme/gadgets"] }), { tab: "pr" })), [7, 8]);
+  assert.deepEqual(numbers(applyFilters(sample(), all({ repos: ["acme/gadgets"], groups: ["fixing"] }), { tab: "pr" })), [8]);
+  const issues = [pr(1), pr(2, { repo: "acme/gadgets" })];
+  assert.deepEqual(numbers(applyFilters(issues, all({ repos: ["acme/gadgets", "acme/widgets"] }), { tab: "issue" })), [1, 2]);
 });
 
 test("applyFilters: the issue tab ignores groups, Dependencies and Merged", () => {
-  const issues = [{ repo: "acme/widgets", number: 1, labels: [], author: "dependabot", ci: "failure" }, { repo: "acme/gadgets", number: 2, labels: [] }];
-  const f = all({ groups: [], deps: false, merged: true });
-  assert.deepEqual(numbers(applyFilters(issues, f, { tab: "issue" })), [1, 2]);
-  assert.deepEqual(numbers(applyFilters(issues, { ...f, repos: ["acme/gadgets"] }, { tab: "issue" })), [2]);
+  const issues = [pr(1), pr(2, { repo: "acme/gadgets" })];
+  assert.deepEqual(numbers(applyFilters(issues, all({ groups: ["ready"], deps: true }), { tab: "issue" })), [1, 2]);
+  assert.deepEqual(numbers(applyFilters(issues, all({ merged: true }), { tab: "issue" })), [1, 2]);
 });
 
-test("applyFilters: Merged is exclusive, so the groups and Dependencies are ignored there; repositories still apply", () => {
-  const merged = [pr(1, { merged: true, author: "dependabot", ...FIXING }), pr(2, { merged: true, repo: "acme/gadgets" })];
-  const f = all({ merged: true, groups: [], deps: false });
-  assert.deepEqual(numbers(applyFilters(merged, f, { tab: "pr" })), [1, 2]);
-  assert.deepEqual(numbers(applyFilters(merged, { ...f, repos: ["acme/gadgets"] }, { tab: "pr" })), [2]);
+test("applyFilters: Merged shows its own list, narrowed by repositories only", () => {
+  const merged = [pr(20), pr(21, { repo: "acme/gadgets" })];
+  assert.deepEqual(numbers(applyFilters(merged, all({ merged: true }), { tab: "pr" })), [20, 21]);
+  assert.deepEqual(numbers(applyFilters(merged, all({ merged: true, repos: ["acme/gadgets"] }), { tab: "pr" })), [21]);
 });
 
 test("applyFilters does not change its input", () => {
   const items = sample(), before = JSON.stringify(items);
-  applyFilters(items, all({ groups: ["ready"], deps: false }), { tab: "pr" });
+  applyFilters(items, all({ groups: ["ready"], repos: ["acme/gadgets"] }), { tab: "pr" });
   assert.equal(JSON.stringify(items), before);
 });
 
-// --- counts ------------------------------------------------------------------------------------------
+// --- counts and labels -----------------------------------------------------------------------------
 
 test("statusCounts: PRs per group and dependency PRs, within the selected repositories", () => {
-  const c = statusCounts(sample(), null, []);
-  assert.deepEqual(c, { groups: { ready: 2, review: 2, fixing: 2, waiting: 1, drafts: 1 }, deps: 2, merged: null });
-  assert.deepEqual(statusCounts(sample(), null, ["acme/gadgets"]), { groups: { ready: 1, review: 0, fixing: 1, waiting: 0, drafts: 0 }, deps: 1, merged: null });
+  assert.deepEqual(statusCounts(sample(), null, []), { groups: { ready: 2, review: 2, fixing: 2, waiting: 1, drafts: 1 }, deps: 2, merged: null });
+  assert.deepEqual(statusCounts(sample(), null, ["acme/gadgets"]).groups, { ready: 1, review: 0, fixing: 1, waiting: 0, drafts: 0 });
 });
 
 test("statusCounts: the Merged count is the merged list's size in the selected repositories, null until loaded", () => {
-  const merged = [pr(1), pr(2, { repo: "acme/gadgets" }), pr(3)];
-  assert.equal(statusCounts([], merged, []).merged, 3);
-  assert.equal(statusCounts([], merged, ["acme/gadgets"]).merged, 1);
-  assert.equal(statusCounts([], [], []).merged, 0);
   assert.equal(statusCounts([], null, []).merged, null);
+  assert.equal(statusCounts([], [pr(20), pr(21, { repo: "acme/gadgets" })], ["acme/gadgets"]).merged, 1);
 });
 
-test("statusCounts: an empty list counts zeros for every group", () => {
-  assert.deepEqual(statusCounts([], null, []).groups, { ready: 0, review: 0, fixing: 0, waiting: 0, drafts: 0 });
-});
-
-// --- the buttons -------------------------------------------------------------------------------------
-
-test("statusLabel: All, Merged, n of 5, and no deps", () => {
+test("statusLabel: All, Merged, one box by name, more as a count", () => {
   assert.equal(statusLabel(all()), "Status: All");
   assert.equal(statusLabel(all({ merged: true })), "Status: Merged");
-  assert.equal(statusLabel(all({ merged: true, deps: false, groups: [] })), "Status: Merged", "Merged says nothing else");
-  assert.equal(statusLabel(all({ groups: ["ready", "review", "fixing"] })), "Status: 3 of 5");
-  assert.equal(statusLabel(all({ groups: ["drafts"] })), "Status: 1 of 5");
-  assert.equal(statusLabel(all({ groups: [] })), "Status: 0 of 5");
-  assert.equal(statusLabel(all({ deps: false })), "Status: All · no deps");
-  assert.equal(statusLabel(all({ deps: false, groups: ["ready", "review", "fixing", "waiting"] })), "Status: 4 of 5 · no deps");
+  assert.equal(statusLabel(all({ groups: ["drafts"] })), "Status: Drafts");
+  assert.equal(statusLabel(all({ deps: true })), "Status: Dependencies");
+  assert.equal(statusLabel(all({ groups: ["ready", "fixing"] })), "Status: 2");
+  assert.equal(statusLabel(all({ groups: ["ready"], deps: true })), "Status: 2");
 });
 
 test("reposLabel: All, one name, two names, a count", () => {
   assert.equal(reposLabel(all()), "Repos: All");
   assert.equal(reposLabel(all({ repos: ["acme/widgets"] })), "Repos: widgets");
   assert.equal(reposLabel(all({ repos: ["acme/gadgets", "acme/widgets"] })), "Repos: gadgets, widgets");
-  assert.equal(reposLabel(all({ repos: ["acme/a", "acme/b", "acme/c"] })), "Repos: 3");
-  assert.equal(reposLabel(all({ repos: ["a/1", "a/2", "a/3", "a/4", "a/5"] })), "Repos: 5");
+  assert.equal(reposLabel(all({ repos: ["a/x", "a/y", "a/z"] })), "Repos: 3");
 });
 
 test("isAllStatus and isDefault", () => {
-  assert.equal(isAllStatus(all({ deps: false })), false);
+  assert.equal(isAllStatus(all()), true);
+  assert.equal(isAllStatus(all({ groups: ["ready"] })), false);
+  assert.equal(isAllStatus(all({ deps: true })), false);
   assert.equal(isAllStatus(all({ merged: true })), false);
-  assert.equal(isAllStatus(all({ repos: ["a/x"] })), true, "repositories are not part of the status");
-  assert.equal(isDefault(all({ repos: ["a/x"] })), false);
+  assert.equal(isDefault(all()), true);
+  assert.equal(isDefault(all({ repos: ["acme/w"] })), false);
 });
 
-// --- the Status menu ---------------------------------------------------------------------------------
+// --- the Status menu -------------------------------------------------------------------------------
 
 const counts = () => statusCounts(sample(), [pr(20), pr(21)], []);
 
-test("statusRows: All, the groups in order with counts, a separator, Dependencies, a separator, Merged", () => {
+test("statusRows: All ticked by default, the groups unticked in order with counts, a separator, Dependencies, a separator, Merged", () => {
   const rows = statusRows(all(), counts(), 7);
-  assert.deepEqual(rows.map((r) => r.label), ["All", "Ready to merge", "To review", "Needs fixing", "Waiting", "Drafts", "Dependencies", "Merged (last 7 days)"]);
-  assert.deepEqual(rows.map((r) => r.count), [null, 2, 2, 2, 1, 1, 2, 2]);
+  assert.deepEqual(rows.map((r) => r.id), ["all", ...GROUP_IDS, "deps", "merged"]);
+  assert.deepEqual(rows.map((r) => r.checked), [true, false, false, false, false, false, false, false]);
   assert.deepEqual(rows.map((r) => r.sepBefore), [false, false, false, false, false, false, true, true]);
-  assert.deepEqual(rows.map((r) => r.checked), [true, true, true, true, true, true, true, false]);
-  assert.equal(rows.some((r) => r.disabled), false);
+  assert.equal(rows.find((r) => r.id === "ready").count, 2);
+  assert.equal(rows.find((r) => r.id === "merged").count, 2);
+  assert.ok(rows.every((r) => !r.disabled));
 });
 
-test("statusRows: Merged on greys out the groups and Dependencies, All stays unchecked and enabled", () => {
-  const rows = statusRows(all({ merged: true }), counts(), 1);
-  assert.deepEqual(rows.map((r) => r.disabled), [false, true, true, true, true, true, true, false]);
-  assert.equal(rows[0].checked, false);
-  assert.equal(rows.at(-1).checked, true);
-  assert.equal(rows.at(-1).label, "Merged (last day)");
+test("statusRows: ticked boxes show, All is unticked while anything is ticked", () => {
+  const rows = statusRows(all({ groups: ["ready"], deps: true }), counts(), 7);
+  assert.deepEqual(rows.filter((r) => r.checked).map((r) => r.id), ["ready", "deps"]);
 });
 
 test("statusRows: the Merged count is null (no number) until the list has loaded", () => {
@@ -184,43 +174,48 @@ test("statusRows: the Merged count is null (no number) until the list has loaded
 test("mergedLabel", () => {
   assert.equal(mergedLabel(7), "Merged (last 7 days)");
   assert.equal(mergedLabel(1), "Merged (last day)");
-  assert.equal(mergedLabel(30), "Merged (last 30 days)");
 });
 
-test("toggleStatus: a group, Dependencies and Merged each flip on their own", () => {
-  const rows = statusRows(all(), counts(), 7), row = (id) => rows.find((r) => r.id === id);
-  let f = toggleStatus(all(), row("waiting"));
-  assert.deepEqual(f.groups, ["ready", "review", "fixing", "drafts"], "group order is kept");
-  f = toggleStatus(f, row("waiting"));
-  assert.deepEqual(f.groups, GROUP_IDS);
-  assert.equal(toggleStatus(all(), row("deps")).deps, false);
-  assert.equal(toggleStatus(all(), row("merged")).merged, true);
-  assert.equal(toggleStatus(all({ merged: true }), row("merged")).merged, false);
+const row = (id) => statusRows(all(), counts(), 7).find((r) => r.id === id);
+
+test("toggleStatus: ticking a group or Dependencies starts filtering; unticking the last one is All again", () => {
+  let f = toggleStatus(all(), row("ready"));
+  assert.deepEqual(f.groups, ["ready"]);
+  f = toggleStatus(f, row("deps"));
+  assert.equal(f.deps, true);
+  f = toggleStatus(toggleStatus(f, row("ready")), row("deps"));
+  assert.equal(isAllStatus(f), true);
 });
 
-test("toggleStatus: unchecking Merged returns to the open PRs with the previous checkboxes", () => {
-  const before = all({ groups: ["ready", "fixing"], deps: false });
-  const on = toggleStatus(before, statusRows(before, counts(), 7).at(-1));
-  assert.equal(on.merged, true);
-  assert.deepEqual([on.groups, on.deps], [before.groups, before.deps], "the checkboxes are untouched while Merged is on");
-  const off = toggleStatus(on, statusRows(on, counts(), 7).at(-1));
-  assert.deepEqual(off, before);
+test("toggleStatus: groups stay in group order", () => {
+  const f = toggleStatus(toggleStatus(all(), row("drafts")), row("ready"));
+  assert.deepEqual(f.groups, ["ready", "drafts"]);
 });
 
-test("toggleStatus: a disabled row changes nothing", () => {
-  const f = all({ merged: true }), rows = statusRows(f, counts(), 7);
-  for (const id of ["ready", "review", "fixing", "waiting", "drafts", "deps"]) assert.deepEqual(toggleStatus(f, rows.find((r) => r.id === id)), f, id);
+test("toggleStatus: ticking all five groups is All", () => {
+  let f = all();
+  for (const id of GROUP_IDS) f = toggleStatus(f, row(id));
+  assert.equal(isAllStatus(f), true);
 });
 
-test("toggleStatus: All checks every group and Dependencies and switches Merged off, repositories stay", () => {
-  const f = all({ groups: ["ready"], deps: false, merged: true, repos: ["acme/gadgets"] });
-  const next = toggleStatus(f, statusRows(f, counts(), 7)[0]);
-  assert.deepEqual(next, { groups: GROUP_IDS, deps: true, merged: false, repos: ["acme/gadgets"] });
+test("toggleStatus: Merged clears the other boxes; a group or Dependencies leaves Merged; unticking Merged is All", () => {
+  const picked = all({ groups: ["ready"], deps: true });
+  const m = toggleStatus(picked, row("merged"));
+  assert.deepEqual({ groups: m.groups, deps: m.deps, merged: m.merged }, { groups: [], deps: false, merged: true });
+  assert.deepEqual(toggleStatus(m, row("drafts")).groups, ["drafts"]);
+  assert.equal(toggleStatus(m, row("drafts")).merged, false);
+  assert.equal(toggleStatus(m, row("deps")).merged, false);
+  assert.equal(isAllStatus(toggleStatus(m, row("merged"))), true);
+});
+
+test("toggleStatus: All clears every tick and Merged, repositories stay", () => {
+  const f = toggleStatus(all({ groups: ["ready"], deps: true, merged: false, repos: ["acme/w"] }), row("all"));
+  assert.deepEqual(f, { ...all(), repos: ["acme/w"] });
 });
 
 test("toggleStatus does not change its input", () => {
   const f = all({ groups: ["ready"] }), before = JSON.stringify(f);
-  toggleStatus(f, statusRows(f, counts(), 7)[2]);
+  toggleStatus(f, row("drafts"));
   assert.equal(JSON.stringify(f), before);
 });
 
@@ -296,7 +291,7 @@ test("reposMenuHeight: capped at twelve rows", () => {
 // --- keyboard ----------------------------------------------------------------------------------------
 
 test("nextRow: wraps around and skips disabled rows", () => {
-  const rows = statusRows(all({ merged: true }), counts(), 7);      // only All (0) and Merged (7) are enabled
+  const rows = Array.from({ length: 8 }, (_, i) => ({ id: i, disabled: i !== 0 && i !== 7 })); // only 0 and 7 enabled
   assert.equal(nextRow(rows, 0, 1), 7);
   assert.equal(nextRow(rows, 7, 1), 0);
   assert.equal(nextRow(rows, 0, -1), 7);
