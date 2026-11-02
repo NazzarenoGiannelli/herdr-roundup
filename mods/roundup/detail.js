@@ -5,7 +5,7 @@ import { avatarPath } from "./avatars.js";
 import { v_flex, h_flex, TextView } from "gpui-base";
 import { truncated } from "./model.js";
 import { shortRepo, ago } from "./browse.js";
-import { MERGED_COLOR, spinner } from "./list.js";
+import { MERGED_COLOR, spinner, ciSpinner } from "./list.js";
 import { isReviewer } from "./config.js";
 import { behindOf } from "./actions.js";
 import { behindLine } from "./update-logic.js";
@@ -65,7 +65,7 @@ function checksList(p, t, detail) {
   return v_flex().flex_none().gap(3)
     .child(div().text_size(11).font_semibold().text_color(t.dim).child("CHECKS"))
     .children(rows.map(r => h_flex().gap(6).items_center().text_size(11.5).min_w(0)
-      .child(checkMark(r.state) === null ? spinner(t).w(12).text_color(color(r.state))
+      .child(checkMark(r.state) === null ? ciSpinner(t).w(12)
         : div().w(12).flex_none().text_color(color(r.state)).child(checkMark(r.state)))
       .child(div().flex_1().min_w(0).truncate().text_color(r.state === "failure" ? t.foreground : t.muted).child(r.name))));
 }
