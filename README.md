@@ -2,7 +2,7 @@
 
 GitHub pull requests and issues for Herdr: read, comment, merge.
 
-![Roundup: on the left a pull request whose branch is behind, with Update branch next to the merge button; on the right the same pull request with its CI running, followed live](preview.png)
+![Roundup: the list grouped by whose move it is, the Status menu, and a merge waiting for its second click](preview.png)
 
 Roundup is a panel for the [Herdr](https://herdr.dev) desktop app. It lists the open pull requests and issues of the GitHub users and organizations you pick, across all their repositories at once. Select one to read its description and conversation. A one-row bar under the detail copies the number or URL, opens the page on GitHub, posts a comment, brings a branch that fell behind up to date, and merges with a split button like GitHub's (two clicks: the first arms it, the second merges). Two dropdowns above the list, Status and Repos, narrow it down. It talks to GitHub through the `gh` command line tool, so there is no token to paste and nothing to download.
 
@@ -87,8 +87,12 @@ If GitHub answers a list with results and an error as well (an organization that
 
 ## Following CI
 
+![Left: a branch behind its base, with Update branch next to the merge button. Right: the same pull request after the update, its CI followed live](docs/update-and-ci.png)
+
+Left, a branch that fell behind its base, with **Update branch** next to the merge button. Right, the same pull request after the update: its CI runs again and the panel follows it.
+
 - **In the list**, a pull request whose CI is running shows an amber circle that turns where its dot would be.
-- **In the detail**, while a check runs or has failed, a `CHECKS` list names each one: failed first (✗), then running (spinner), then the rest (✓). When everything passed, the CI chip says so and the list stays out of the way.
+- **In the detail**, while a check runs or has failed, a `CHECKS` list names each one: failed first (✗), then running (the turning circle), then the rest (✓). When everything passed, the CI chip says so and the list stays out of the way.
 - **How live it is.** GitHub can't push to a panel on your machine, so Roundup looks again: the selected pull request every 15 seconds while one of its checks runs, the list every 30 seconds while any pull request in it has CI running, and every minute otherwise. When the checks finish, the list is read again so the row's dot catches up.
 
 ## Merging
