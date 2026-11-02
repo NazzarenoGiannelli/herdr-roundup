@@ -76,7 +76,7 @@ If GitHub answers a list with results and an error as well (an organization that
   - **Repos** (both tabs) has `All` and every repository of the list with its count, most items first. Tick as many as you like; nothing ticked means all. A ticked repository with nothing left in the list stays in the menu, greyed with 0, so you can untick it. The button reads `Repos: All`, `Repos: widgets`, `Repos: gadgets, widgets` or `Repos: 3`.
 - **Groups:** while you are not searching (and not on Merged), pull requests sit under headings in this order: Ready to merge, To review, Needs fixing, Waiting, Drafts. A pull request is in the first group that fits. Drafts are always last. Empty groups are hidden.
 - **Dots:** green CI passing, red failing, amber running, grey none, purple merged.
-- **Refresh:** the list reloads every minute while the panel is on screen. `⟳` reloads now. `⤢` folds the list so the detail gets the whole panel. Drag the bar between them to resize.
+- **Refresh:** the list reloads every minute while the panel is on screen (every 30 seconds while a CI runs). `⟳` reloads now. `▴` hides the list so the detail gets the whole panel, `▾` brings it back (so do `Ctrl+F` and `/`). Both buttons have a tooltip. Drag the bar between list and detail to resize.
 - **Keys:**
   - `↑` / `↓` move through the list.
   - `Ctrl+F` (or Cmd+F) focuses the search field from anywhere in the panel. `/` does the same when the list has the keyboard.

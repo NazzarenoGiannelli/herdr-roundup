@@ -133,17 +133,20 @@ const ciSpinner = (t) => div().w(10).flex_none().flex().items_center().justify_c
 export function refreshButton(p, t) {
   return div().id("gh-refresh").w(28).h(26).flex().items_center().justify_center().rounded(6).cursor_pointer().flex_none()
     .text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
+    .tooltip(p.loading ? "Refreshing…" : "Refresh")
     .on_click((_e, cx) => p.reload(cx))
     .child(p.loading ? spinner(t) : "⟳");
 }
 
-// ⤢: folds the list to the header row so the detail gets the whole panel, and back.
+// ▴ / ▾: folds the list to the header row so the detail gets the whole panel, and back.
 export function collapseButton(p, t) {
   return div().id("gh-collapse").w(28).h(26).flex().items_center().justify_center().rounded(6).cursor_pointer().flex_none()
     .text_color(p.collapsed ? t.foreground : t.muted).when(p.collapsed, el => el.bg(t.selected))
     .hover(s => s.bg(t.hover).text_color(t.foreground))
+    // Folds the list away so the detail takes the whole height (Ctrl+F or / bring it back too).
+    .tooltip(p.collapsed ? "Show the list" : "Hide the list")
     .on_click((_e, cx) => p.toggleList(cx))
-    .child("⤢");
+    .child(p.collapsed ? "▾" : "▴");
 }
 
 // A popup of checkboxes (the Status and Repos menus). `rows` come from filters.js; `p.toggle(row, cx)`
