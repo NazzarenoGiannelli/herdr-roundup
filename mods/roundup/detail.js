@@ -1,6 +1,7 @@
 // The detail half of the GitHub panel (layout C): the selected item's header, description
 // and timeline. Rendering only; state and fetching live in main.js, pure logic in detail-logic.js.
 import { div, image } from "gpui-kit";
+import { settings } from "herdr";
 import { avatarPath } from "./avatars.js";
 import { v_flex, h_flex, TextView } from "gpui-base";
 import { truncated } from "./model.js";
@@ -9,10 +10,17 @@ import { MERGED_COLOR, spinner, ciSpinner } from "./list.js";
 import { isReviewer } from "./config.js";
 import { behindOf } from "./actions.js";
 import { behindLine } from "./update-logic.js";
-import { checkRows, checkMark } from "./live-logic.js";
+import { checkRows, checkMark, checksOpen, checksSummary, checkTime } from "./live-logic.js";
+import { activity, groupOpen, pushedLabel, hasOlderCommits, reviewRows, reviewRowLabel } from "./activity-logic.js";
 import { whenLabel, windowTimeline, planBodies, reviewLabel, reviewInput, ciChip, reviewStateLabel, hasOlderActivity, initial, descriptionCap, ENTRY_MAX, threadBudgetFor } from "./detail-logic.js";
 
 const tone = (t, name) => name === "good" ? t.ansi2 : name === "bad" ? t.ansi1 : name === "warn" ? t.ansi3 : t.dim;
+const stateColor = (t, s) => s === "success" ? t.ansi2 : s === "failure" ? t.ansi1 : s === "pending" ? t.ansi3 : t.dim;
+// Commit hashes in the terminal's font (the person's own setting, JetBrains Mono without one).
+const mono = () => settings()?.font_family ?? "JetBrains Mono";
+
+// A row that opens `url` on a click (with a hover and a tooltip); a plain row without one.
+const opens = (t, row, url, tip) => url ? row.cursor_pointer().hover(s => s.bg(t.hover)).tooltip(tip).on_click((_e, cx) => cx.open_url(url)) : row;
 
 const chip = (t, text, color) => div().flex_none().px(6).h(18).flex().items_center().rounded(4).border_1().border_color(t.border)
   .text_size(10.5).text_color(color ?? t.muted).child(text);
@@ -56,18 +64,46 @@ function header(p, t, item, detail) {
     .when(item.labels.length > 0, el => el.child(h_flex().gap(4).flex_wrap().children(item.labels.map(l => chip(t, l)))));
 }
 
-// The checks, while something runs or has failed: failed first, then running (with a spinner), then
-// the rest. The detail is read again every 15 seconds while one runs (main.js followChecks).
-function checksList(p, t, detail) {
+// The checks: failed first, then running (a spinner), queued (○), then the rest, each with how long
+// it ran or has been running; a click opens its run. Open while something runs or failed, one line
+// ("CHECKS · 6 passed") when everything passed; the heading flips it. The detail is read again every
+// 10 seconds while one runs (main.js followChecks).
+function checksList(p, t, key, detail) {
   const rows = checkRows(detail?.checks);
   if (rows.length === 0) return null;
-  const color = (s) => s === "success" ? t.ansi2 : s === "failure" ? t.ansi1 : s === "pending" ? t.ansi3 : t.dim;
+  const open = checksOpen(rows, p.checksToggled.has(key)), now = Date.now();
   return v_flex().flex_none().gap(3)
-    .child(div().text_size(11).font_semibold().text_color(t.dim).child("CHECKS"))
-    .children(rows.map(r => h_flex().gap(6).items_center().text_size(11.5).min_w(0)
-      .child(checkMark(r.state) === null ? ciSpinner(t).w(12)
-        : div().w(12).flex_none().text_color(color(r.state)).child(checkMark(r.state)))
-      .child(div().flex_1().min_w(0).truncate().text_color(r.state === "failure" ? t.foreground : t.muted).child(r.name))));
+    .child(h_flex().id(`gh-checks-${key}`).gap(6).items_center().cursor_pointer().text_size(11).text_color(t.dim)
+      .hover(s => s.text_color(t.foreground)).on_click((_e, cx) => p.toggleChecks(key, cx))
+      .child(div().font_semibold().child("CHECKS"))
+      .child(div().min_w(0).truncate().child(checksSummary(rows)))
+      .child(div().flex_none().child(open ? "▾" : "▸")))
+    .when(open, el => el.children(rows.map((r, i) => {
+      const mark = checkMark(r.state, r.phase);
+      return opens(t, h_flex().id(`gh-check-${key}-${i}`).gap(6).items_center().text_size(11.5).min_w(0).rounded(4)
+        .child(mark === null ? ciSpinner(t).w(12) : div().w(12).flex_none().text_color(stateColor(t, r.state)).child(mark))
+        .child(div().flex_1().min_w(0).truncate().text_color(r.state === "failure" ? t.foreground : t.muted).child(r.name))
+        .child(div().flex_none().text_size(11).text_color(t.dim).child(checkTime(r, now))), r.url, "Open the run on GitHub");
+    })));
+}
+
+// Who is reviewing and where each stands (activity-logic.reviewRows): a review check running, a
+// review asked for and not given, then each person's latest verdict.
+function reviewList(p, t, key, detail) {
+  const rows = reviewRows(detail, p.config);
+  if (rows.length === 0) return null;
+  return v_flex().flex_none().gap(4)
+    .child(div().text_size(11).font_semibold().text_color(t.dim).child("REVIEW"))
+    .children(rows.map((r, i) => {
+      const label = reviewRowLabel(r.state), busy = r.state === "reviewing";
+      const right = busy ? (r.check ?? "") : r.at ? whenLabel(r.at, p.now) : "";
+      return opens(t, h_flex().id(`gh-review-${key}-${i}`).gap(6).items_center().text_size(11.5).min_w(0).rounded(4)
+        .child(avatar(t, r.who, isReviewer(r.who, p.config), r.avatar, 16))
+        .child(div().flex_none().text_color(t.foreground).child(r.who))
+        .when(busy, el => el.child(ciSpinner(t)))
+        .child(div().flex_1().min_w(0).truncate().text_color(tone(t, label.tone)).child(label.text))
+        .child(div().flex_none().text_size(11).text_color(t.dim).child(right)), r.url, "Open the review run on GitHub");
+    }));
 }
 
 // A markdown block; `id` stays the same for the same text, so the view keeps its state.
@@ -95,8 +131,35 @@ function avatar(t, author, reviewer, url, size = 22) {
     .bg(reviewer ? t.accent : t.hover).text_color(reviewer ? t.accent_foreground : t.muted).child(initial(author));
 }
 
-function entry(p, t, key, plan, item) {
+// One commit: its CI mark, short hash, title; a click opens it on GitHub.
+function commitRow(p, t, key, c) {
+  const mark = c.ci === "pending" ? ciSpinner(t)
+    : div().w(10).flex_none().text_size(10.5).text_color(stateColor(t, c.ci)).child(c.ci === "success" ? "✓" : c.ci === "failure" ? "✗" : "·");
+  return opens(t, h_flex().id(`gh-commit-${key}-${c.oid}`).gap(6).items_center().text_size(11.5).min_w(0).rounded(4)
+    .child(mark)
+    .child(div().flex_none().font_family(mono()).text_size(11).text_color(t.accent).child(c.short))
+    .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(c.title)), c.url, "Open the commit on GitHub");
+}
+
+// Commits in a row by one author: "jonas pushed 4 commits · 2h", then the commits. The newest group
+// and single commits start open; a click on the heading opens or closes a group.
+function commitGroup(p, t, key, g, newest) {
+  const many = g.commits.length > 1, open = groupOpen(g, newest, p.pushesToggled(key)), who = g.author || "Someone";
+  const head = h_flex().id(`gh-push-${key}-${g.id}`).gap(6).items_center().text_size(11.5).text_color(t.dim).min_w(0)
+    .child(avatar(t, who, isReviewer(who, p.config), g.avatar, 16))
+    .child(div().min_w(0).truncate().child(`${who} ${pushedLabel(g.commits.length)} · ${whenLabel(g.at, p.now)}`))
+    .when(many, el => el.cursor_pointer().hover(s => s.text_color(t.foreground)).on_click((_e, cx) => p.togglePush(key, g.id, cx))
+      .child(div().flex_none().child(open ? "▾" : "▸")));
+  return v_flex().gap(3).min_w(0).child(head)
+    .when(open, el => el.child(v_flex().gap(2).pl(22).min_w(0).children(g.commits.map(c => commitRow(p, t, key, c)))));
+}
+
+function entry(p, t, key, plan, item, newest) {
   const { entry: e, index, text, cut, excerpt } = plan;
+  if (e.kind === "commits") return commitGroup(p, t, key, e, newest);
+  if (e.kind === "forcepush") {
+    return div().text_size(11.5).text_color(t.dim).child(`${e.author || "Someone"} force-pushed the branch${e.after ? ` to ${e.after}` : ""} · ${whenLabel(e.at, p.now)}`);
+  }
   if (e.kind === "labeled") {
     return div().text_size(11.5).text_color(t.dim).child(`${e.author || "Someone"} added the label ${e.label} · ${whenLabel(e.at, p.now)}`);
   }
@@ -122,19 +185,22 @@ function entry(p, t, key, plan, item) {
         .child(link(t, `cut-${key}-${index}`, "Open on GitHub", cx => cx.open_url(item.url))))));
 }
 
+// The conversation with the branch's commits woven in (activity-logic.activity), oldest first.
 function timeline(p, t, key, item, detail) {
-  const { shown, hidden } = windowTimeline(detail.timeline, p.expanded.has(key));
+  const all = activity(detail.timeline, detail.commits);
+  const { shown, hidden } = windowTimeline(all, p.expanded.has(key));
   if (shown.length === 0) return null;
   // The description is spent first: the thread gets what is left of the one render budget.
   const plans = planBodies(shown, p.openedEntries(key), ENTRY_MAX, threadBudgetFor(detail));
   return v_flex().gap(8).min_w(0)
     .child(div().text_size(11).font_semibold().text_color(t.dim).child("ACTIVITY"))
-    // The query returns the last 100 entries: exactly 100 means the thread goes further back.
-    .when(hidden === 0 && hasOlderActivity(detail), el => el.child(h_flex().text_size(11.5).child(link(t, `older-${key}`, "Older activity on GitHub", cx => cx.open_url(item.url)))))
+    // The query returns the last 100 entries and the last 100 commits: exactly 100 entries, or more
+    // commits than came back, means the thread goes further back.
+    .when(hidden === 0 && (hasOlderActivity(detail) || hasOlderCommits(detail)), el => el.child(h_flex().text_size(11.5).child(link(t, `older-${key}`, "Older activity on GitHub", cx => cx.open_url(item.url)))))
     .when(hidden > 0, el => el.child(div().id("gh-earlier").h(26).flex().items_center().justify_center().rounded(6).cursor_pointer()
       .border_1().border_color(t.border).text_size(11.5).text_color(t.muted).hover(s => s.bg(t.hover))
       .on_click((_e, cx) => p.showEarlier(key, cx)).child(`Show earlier (${hidden})`)))
-    .children(plans.map(plan => entry(p, t, key, plan, item)));
+    .children(plans.map(plan => entry(p, t, key, plan, item, plan.index === all.length - 1)));
 }
 
 // The bar between the list and the detail: press and drag to resize the list (main.js moves it).
@@ -152,10 +218,13 @@ export function detailPane(p, t, actions) {
   const item = p.selectedItem();
   if (!item) return v_flex().id("gh-detail").flex_1().min_h(0).child(placeholder(t, p.tab === "pr" ? "Select a pull request to read it here." : "Select an issue to read it here."));
   const key = `${item.repo}#${item.number}`, entryState = p.detailEntry(), detail = entryState?.detail ?? null;
+  const open = p.tab === "pr" && !item.merged;
+  const checks = open ? checksList(p, t, key, detail) : null, reviews = open ? reviewList(p, t, key, detail) : null;
   return v_flex().id("gh-detail").flex_1().min_h(0)
     .child(v_flex().id(`gh-scroll-${key}`).flex_1().min_h(0).overflow_y_scrollbar().p(12).gap(12)
       .child(header(p, t, item, detail))
-      .when(p.tab === "pr" && !item.merged && Boolean(checksList(p, t, detail)), el => el.child(checksList(p, t, detail)))
+      .when(Boolean(checks), el => el.child(checks))
+      .when(Boolean(reviews), el => el.child(reviews))
       .when(entryState?.error && !detail, el => el.child(div().text_size(12).text_color(t.ansi1).child(`Couldn't load the details: ${entryState.error} · Press ⟳ to retry.`)))
       .when(entryState?.error && Boolean(detail), el => el.child(div().text_size(11.5).text_color(t.ansi1).child(`Couldn't refresh the details: ${entryState.error} · showing the last version.`)))
       .when(!detail && !entryState?.error, el => el.child(h_flex().gap(8).items_center().text_size(12).text_color(t.dim).child(spinner(t)).child("Loading…")))

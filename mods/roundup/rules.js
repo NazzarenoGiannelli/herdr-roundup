@@ -4,7 +4,7 @@
 
 import { DEFAULT_CONFIG, hasLabel, isReviewer } from "./config.js";
 
-const CHANGES_PREFIX = "CHANGES REQUESTED";
+export const CHANGES_PREFIX = "CHANGES REQUESTED";
 
 // GitHub's decision, else the latest comment by one of config.reviewers.
 export function reviewState(pr, config = DEFAULT_CONFIG) {

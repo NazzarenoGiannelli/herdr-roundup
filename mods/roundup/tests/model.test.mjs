@@ -169,7 +169,7 @@ test("truncated: leaves short text alone, honours custom max", () => {
 
 test("normalizeDetail (PR): checks from the last commit's rollup, one state per check", () => {
   const d = normalizeDetail(fx("pr-detail.json"));
-  assert.deepEqual(d.checks, [
+  assert.deepEqual(d.checks.map((c) => ({ name: c.name, state: c.state })), [
     { name: "check", state: "success" },
     { name: "claude-review", state: "success" },
     { name: "deploy", state: "skipped" },
@@ -192,6 +192,56 @@ test("normalizeDetail: check conclusions and statuses map to success/pending/fai
   const states = Object.fromEntries(normalizeDetail(raw).checks.map((c) => [c.name, c.state]));
   assert.deepEqual(states, { a: "success", b: "failure", c: "failure", d: "failure", e: "neutral", f: "skipped",
     g: "pending", h: "pending", "ci/legacy": "failure", "ci/ok": "success", "ci/wait": "pending" });
+});
+
+test("normalizeDetail: a running check says whether it started, with its times and link", () => {
+  const raw = { data: { repository: { pullRequest: {
+    body: "", commits: { nodes: [{ commit: { statusCheckRollup: { state: "PENDING", contexts: { totalCount: 4, nodes: [
+      { __typename: "CheckRun", name: "test", status: "IN_PROGRESS", conclusion: null, startedAt: "2026-11-02T10:00:00Z", completedAt: null, detailsUrl: "https://x/run/1" },
+      { __typename: "CheckRun", name: "e2e", status: "QUEUED", conclusion: null, startedAt: null, completedAt: null, detailsUrl: "https://x/run/2" },
+      { __typename: "CheckRun", name: "lint", status: "COMPLETED", conclusion: "SUCCESS", startedAt: "2026-11-02T10:00:00Z", completedAt: "2026-11-02T10:00:49Z", detailsUrl: "https://x/run/3" },
+      { __typename: "StatusContext", context: "ci/legacy", state: "PENDING", createdAt: "2026-11-02T10:01:00Z", targetUrl: "https://ci/1" },
+    ] } } } }] },
+  } } } };
+  const [test1, e2e, lint, legacy] = normalizeDetail(raw).checks;
+  assert.deepEqual(test1, { name: "test", state: "pending", phase: "running", startedAt: "2026-11-02T10:00:00Z", completedAt: null, url: "https://x/run/1" });
+  assert.equal(e2e.phase, "queued");
+  assert.deepEqual({ phase: lint.phase, completedAt: lint.completedAt }, { phase: null, completedAt: "2026-11-02T10:00:49Z" });
+  assert.deepEqual({ phase: legacy.phase, startedAt: legacy.startedAt, url: legacy.url }, { phase: "running", startedAt: "2026-11-02T10:01:00Z", url: "https://ci/1" });
+});
+
+test("normalizeDetail: commits, review requests, latest reviews and force pushes", () => {
+  const raw = { data: { repository: { pullRequest: {
+    body: "",
+    history: { totalCount: 120, nodes: [
+      { commit: { oid: "a".repeat(40), abbreviatedOid: "aaaaaaa", messageHeadline: "Fix the thing", committedDate: "2026-11-01T09:00:00Z", url: "https://gh/c/a",
+        author: { name: "Jonas", user: { login: "jonas", avatarUrl: "https://av/j" } }, statusCheckRollup: { state: "FAILURE" } } },
+      { commit: { oid: "b".repeat(40), abbreviatedOid: "bbbbbbb", messageHeadline: "Merge branch 'main'", committedDate: "2026-11-01T10:00:00Z", url: "https://gh/c/b",
+        author: { name: "Someone Unlinked", user: null }, statusCheckRollup: null } },
+      null,
+    ] },
+    reviewRequests: { nodes: [
+      { requestedReviewer: { __typename: "User", login: "mira", avatarUrl: "https://av/m" } },
+      { requestedReviewer: { __typename: "Team", name: "core" } },
+      { requestedReviewer: null },
+    ] },
+    latestReviews: { nodes: [{ author: { login: "ola", avatarUrl: null }, state: "APPROVED", submittedAt: "2026-11-01T11:00:00Z" }] },
+    timelineItems: { nodes: [{ __typename: "HeadRefForcePushedEvent", actor: { login: "jonas" }, createdAt: "2026-11-01T09:30:00Z", afterCommit: { abbreviatedOid: "ccccccc" } }] },
+  } } } };
+  const d = normalizeDetail(raw);
+  assert.equal(d.commitCount, 120);
+  assert.deepEqual(d.commits[0], { oid: "a".repeat(40), short: "aaaaaaa", title: "Fix the thing", at: "2026-11-01T09:00:00Z", url: "https://gh/c/a",
+    author: "jonas", authorName: "Jonas", avatar: "https://av/j", ci: "failure" });
+  assert.deepEqual({ author: d.commits[1].author, authorName: d.commits[1].authorName, ci: d.commits[1].ci }, { author: "", authorName: "Someone Unlinked", ci: "none" });
+  assert.equal(d.commits.length, 2);
+  assert.deepEqual(d.reviewRequests, [{ who: "mira", avatar: "https://av/m", team: false }, { who: "core", avatar: null, team: true }]);
+  assert.deepEqual(d.latestReviews, [{ author: "ola", avatar: null, state: "APPROVED", at: "2026-11-01T11:00:00Z" }]);
+  assert.deepEqual(d.timeline, [{ kind: "forcepush", author: "jonas", at: "2026-11-01T09:30:00Z", after: "ccccccc" }]);
+});
+
+test("normalizeDetail: an issue has no commits or reviews (null)", () => {
+  const d = normalizeDetail({ data: { repository: { issue: { body: "" } } } });
+  for (const k of ["commits", "commitCount", "reviewRequests", "latestReviews"]) assert.equal(d[k], null);
 });
 
 test("normalizeDetail: no rollup gives no checks; an issue has none (null)", () => {

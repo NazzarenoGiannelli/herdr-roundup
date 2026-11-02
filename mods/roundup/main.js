@@ -89,6 +89,8 @@ export default class GitHub extends View {
     this.detailBusy = null;                     // key being fetched: one detail fetch at a time
     this.expanded = new Set();                  // keys whose whole timeline is shown
     this.opened = new Map();                    // key -> Set of timeline indexes whose long body was opened
+    this.checksToggled = new Set();             // keys whose CHECKS list was opened or closed by hand
+    this.pushes = new Map();                    // key -> Set of commit-group ids opened or closed by hand
     this.repos = new Map();                     // "repo:base" -> { info, error }: merge settings (fetchRepo)
     this.method = new Map();                    // key -> merge method picked for that PR in the popup
     this.pickAt = shared(SHARED_PICK)?.at ?? null;
@@ -270,6 +272,9 @@ export default class GitHub extends View {
   showEarlier(key, cx) { this.expanded.add(key); cx.notify(); }
   openedEntries(key) { return this.opened.get(key) ?? new Set(); }
   showEntry(key, index, cx) { this.opened.set(key, this.openedEntries(key).add(index)); cx.notify(); }
+  toggleChecks(key, cx) { if (!this.checksToggled.delete(key)) this.checksToggled.add(key); cx.notify(); }
+  pushesToggled(key) { return this.pushes.get(key) ?? new Set(); }
+  togglePush(key, id, cx) { const s = this.pushesToggled(key); if (!s.delete(id)) s.add(id); this.pushes.set(key, s); cx.notify(); }
   toggleList(cx) { this.collapsed = !this.collapsed; this.drag = null; cx.notify(); }
 
   // The divider: pressed, dragged (the pointer moves over the panel), released anywhere on it.
@@ -458,7 +463,11 @@ export default class GitHub extends View {
     const problem = errorLine(this.listKind(), error, Boolean(data));
     // The pictures of the selected item's author and of everyone in its thread (downloaded once per run).
     const shownItem = this.selectedItem();
-    if (shownItem) ensureAvatars([shownItem.avatar, ...(this.detail?.timeline ?? []).map(e => e.avatar)], cx);
+    if (shownItem) {
+      const d = this.detail;
+      ensureAvatars([shownItem.avatar, ...(d?.timeline ?? []).map(e => e.avatar), ...(d?.commits ?? []).map(c => c.avatar),
+        ...(d?.latestReviews ?? []).map(r => r.avatar), ...(d?.reviewRequests ?? []).map(r => r.avatar)], cx);
+    }
 
     return v_flex().id("github").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .on_size_change((size, cx) => {

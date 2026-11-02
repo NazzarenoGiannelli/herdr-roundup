@@ -4,7 +4,7 @@ GitHub pull requests and issues for Herdr: read, comment, merge.
 
 ![Roundup: the list grouped by whose move it is, the Status menu, and a merge waiting for its second click](preview.png)
 
-Roundup is a panel for the [Herdr](https://herdr.dev) desktop app. It lists the open pull requests and issues of the GitHub users and organizations you pick, across all their repositories at once. Select one to read its description and conversation. A one-row bar under the detail copies the number or URL, opens the page on GitHub, posts a comment, brings a branch that fell behind up to date, and merges with a split button like GitHub's (two clicks: the first arms it, the second merges). Two dropdowns above the list, Status and Repos, narrow it down. It talks to GitHub through the `gh` command line tool, so there is no token to paste and nothing to download.
+Roundup is a panel for the [Herdr](https://herdr.dev) desktop app. It lists the open pull requests and issues of the GitHub users and organizations you pick, across all their repositories at once. Select one to read its description and conversation, with its commits, checks and reviews. A one-row bar under the detail copies the number or URL, opens the page on GitHub, posts a comment, brings a branch that fell behind up to date, and merges with a split button like GitHub's (two clicks: the first arms it, the second merges). Two dropdowns above the list, Status and Repos, narrow it down. It talks to GitHub through the `gh` command line tool, so there is no token to paste and nothing to download.
 
 Pull requests are grouped by whose move it is: ready to merge, to review, needs fixing, waiting for CI, drafts. When CI blocks a merge, the bar names the checks that failed or are still running.
 
@@ -92,8 +92,10 @@ If GitHub answers a list with results and an error as well (an organization that
 Left, a branch that fell behind its base, with **Update branch** next to the merge button. Right, the same pull request after the update: its CI runs again and the panel follows it.
 
 - **In the list**, a pull request whose CI is running shows an amber circle that turns where its dot would be.
-- **In the detail**, while a check runs or has failed, a `CHECKS` list names each one: failed first (✗), then running (the turning circle), then the rest (✓). When everything passed, the CI chip says so and the list stays out of the way.
-- **How live it is.** GitHub can't push to a panel on your machine, so Roundup looks again: the selected pull request every 15 seconds while one of its checks runs, the list every 30 seconds while any pull request in it has CI running, and every minute otherwise. When the checks finish, the list is read again so the row's dot catches up.
+- **In the detail**, a `CHECKS` list names each check: failed first (✗), then running (the turning circle), then queued (○), then the rest (✓). Each row says how long the check took, or for how long it has been running; a click opens its run on GitHub. While something runs or has failed the list is open. When everything passed it is one line, `CHECKS · 6 passed · 1 skipped`, that opens on a click.
+- **Reviews.** Under the checks, `REVIEW` lists who is reviewing and where each one stands: a review check running (`claude-review`, `security-review`: any check with "review" in its name, shown as that reviewer when it starts with a login in `reviewers`), someone asked for a review who hasn't given it yet, then each person's latest verdict (approved, requested changes, commented). For a login in `reviewers`, their latest comment counts too, as it does for the groups.
+- **Commits.** The `ACTIVITY` thread has the branch's commits (the last 100) among the comments and reviews, in order. Commits in a row by the same author become one line, `jonas pushed 4 commits · 2h`, that opens on a click; the newest push starts open. Each commit shows its CI mark, short hash and title, and a click opens it on GitHub. Force pushes show as one line.
+- **How live it is.** GitHub can't push to a panel on your machine, so Roundup looks again: the selected pull request every 10 seconds while one of its checks runs, the list every 30 seconds while any pull request in it has CI running, and every minute otherwise. When the checks finish, the list is read again so the row's dot catches up.
 
 ## Merging
 

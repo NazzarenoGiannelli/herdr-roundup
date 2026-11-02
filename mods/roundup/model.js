@@ -72,6 +72,8 @@ function timelineEntry(n) {
       return { kind: "review", author: login(n.author), avatar: avatarOf(n.author), at: n.createdAt, body: n.body ?? "", state: n.state };
     case "LabeledEvent":
       return { kind: "labeled", author: login(n.actor), at: n.createdAt, label: n.label?.name ?? "" };
+    case "HeadRefForcePushedEvent":
+      return { kind: "forcepush", author: login(n.actor), at: n.createdAt, after: n.afterCommit?.abbreviatedOid ?? null };
     default:
       return null;
   }
@@ -102,7 +104,41 @@ export function normalizeDetail(graphql) {
     headOid: node.headRefOid ?? null,
     ci: repo.pullRequest ? ciFromRollup(node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state ?? null) : null,
     timeline,
+    // The branch's commits (the last 100, oldest first), who was asked for a review, each reviewer's latest review.
+    commits: repo.pullRequest ? normalizeCommits(node.history) : null,
+    commitCount: repo.pullRequest ? (node.history?.totalCount ?? null) : null,
+    reviewRequests: repo.pullRequest ? ((node.reviewRequests?.nodes) || []).map((r) => requested(r?.requestedReviewer)).filter(Boolean) : null,
+    latestReviews: repo.pullRequest ? ((node.latestReviews?.nodes) || []).filter(Boolean)
+      .map((r) => ({ author: login(r.author), avatar: avatarOf(r.author), state: r.state ?? null, at: r.submittedAt ?? null })) : null,
   };
+}
+
+function normalizeCommits(history) {
+  return ((history?.nodes) || []).map((n) => n?.commit).filter((c) => c && c.oid).map((c) => ({
+    oid: c.oid,
+    short: c.abbreviatedOid || c.oid.slice(0, 7),
+    title: c.messageHeadline ?? "",
+    at: c.committedDate ?? null,
+    url: c.url ?? null,
+    author: c.author?.user?.login ?? "",
+    authorName: c.author?.name ?? "",
+    avatar: c.author?.user?.avatarUrl ?? null,
+    ci: c.statusCheckRollup ? ciFromRollup(c.statusCheckRollup.state ?? null) : "none",
+  }));
+}
+
+// A requested reviewer: a person or bot by login, a team by name.
+function requested(r) {
+  if (!r) return null;
+  const who = r.__typename === "Team" ? r.name : r.login;
+  return who ? { who, avatar: r.avatarUrl ?? null, team: r.__typename === "Team" } : null;
+}
+
+// Whether a running check has started: a CheckRun in progress runs, one queued, waiting or
+// requested has not; a StatusContext only says pending, so it counts as running.
+function checkPhase(n) {
+  if (n.__typename === "StatusContext") return "running";
+  return n.status === "IN_PROGRESS" ? "running" : "queued";
 }
 
 // A check's state: CheckRun by status/conclusion, StatusContext by state.
@@ -122,7 +158,18 @@ function checkState(n) {
 
 function normalizeChecks(node) {
   const nodes = node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes;
-  return (nodes || []).filter(Boolean).map((n) => ({ name: n.__typename === "StatusContext" ? n.context : n.name, state: checkState(n) }));
+  return (nodes || []).filter(Boolean).map((n) => {
+    const status = n.__typename === "StatusContext";
+    const state = checkState(n);
+    return {
+      name: status ? n.context : n.name,
+      state,
+      phase: state === "pending" ? checkPhase(n) : null,
+      startedAt: (status ? n.createdAt : n.startedAt) ?? null,
+      completedAt: status ? null : (n.completedAt ?? null),
+      url: (status ? n.targetUrl : n.detailsUrl) ?? null,
+    };
+  });
 }
 
 export function truncated(text, max = 60000) {
