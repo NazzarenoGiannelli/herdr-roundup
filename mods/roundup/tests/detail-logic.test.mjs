@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { truncated } from "../model.js";
-import { whenLabel, windowTimeline, clampListHeight, defaultListHeight, dragHeight, reviewLabel, ciLabel, reviewStateLabel, initial, splitKey, MIN_LIST, MAX_TIMELINE, ciSummary, ciChip, planBodies, reviewInput, hasOlderActivity, ENTRY_MAX, THREAD_BUDGET, DESCRIPTION_MAX, threadBudgetFor, capDetail, descriptionCap, THREAD_FLOOR } from "../detail-logic.js";
+import { whenLabel, windowTimeline, clampListHeight, defaultListHeight, dragHeight, reviewLabel, ciLabel, reviewStateLabel, initial, splitKey, MIN_LIST, MAX_TIMELINE, ciSummary, ciChip, planBodies, reviewInput, hasOlderActivity, ENTRY_MAX, THREAD_BUDGET, DESCRIPTION_MAX, threadBudgetFor, capDetail, descriptionCap, THREAD_FLOOR, scrolledBy, showsTop, TOP_AFTER } from "../detail-logic.js";
 
 const NOW = Date.parse("2026-10-31T12:00:00Z");
 const ago = (ms) => new Date(NOW - ms).toISOString();
@@ -263,4 +263,15 @@ test("the thread keeps a floor: its newest entry renders in full beside a long d
   const plan = planBodies(shown, new Set(), ENTRY_MAX, threadBudgetFor(detail));
   assert.equal(plan[0].text?.length, 5000, "the newest review is not an excerpt");
   assert.ok(Math.min(detail.body.length, descriptionCap(detail)) + 5000 <= THREAD_BUDGET);
+});
+
+test("scrolledBy: the wheel adds up, never above the top; showsTop past TOP_AFTER", () => {
+  assert.equal(scrolledBy(0, { delta: { y: -120 } }), 120, "down");
+  assert.equal(scrolledBy(120, { delta: { y: 200 } }), 0, "up past the top stops at 0");
+  assert.equal(scrolledBy(0, { delta: { y: 0 }, delta_lines: { y: -3 } }), 60, "lines");
+  assert.equal(scrolledBy(50, {}), 50);
+  assert.equal(scrolledBy(undefined, { delta: { y: -10 } }), 10);
+  assert.equal(showsTop(TOP_AFTER), false);
+  assert.equal(showsTop(TOP_AFTER + 1), true);
+  assert.equal(showsTop(undefined), false);
 });

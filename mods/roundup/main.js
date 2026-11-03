@@ -15,7 +15,7 @@ import { tabs, filtersRow, rowsList, note, emptyState, noMatch, refreshButton, c
 import { normalizeFilters, parseStored, applyFilters, statusCounts, statusRows, statusMenuHeight, repoCounts, repoRows, reposMenuHeight, toggleStatus, toggleRepo, pressCloses } from "./filters.js";
 import { detailPane, divider } from "./detail.js";
 import { ensureAvatars } from "./avatars.js";
-import { splitKey, clampListHeight, dragHeight, capDetail } from "./detail-logic.js";
+import { splitKey, clampListHeight, dragHeight, capDetail, scrolledBy, showsTop } from "./detail-logic.js";
 import { nextKey, dropGone, mergeRetryDelay, wantsMergeRetry, siblingKeys } from "./actions-logic.js";
 import { listPollMs, wantsLiveDetail, ciSettled } from "./live-logic.js";
 import { actionBar, mergeMenu, startMergeMenu, ensureRepoInfo, ensureBehind, forgetRepoErrors, applyPick, closeComment, disarm, SHARED_PICK } from "./actions.js";
@@ -90,6 +90,8 @@ export default class GitHub extends View {
     this.expanded = new Set();                  // keys whose whole timeline is shown
     this.opened = new Map();                    // key -> Set of timeline indexes whose long body was opened
     this.checksToggled = new Set();             // keys whose CHECKS list was opened or closed by hand
+    this.tops = new Map();                      // key -> how many times "back to the top" was clicked (see toTop)
+    this.down = new Map();                      // key -> about how far the detail was scrolled down, in px (see scrolled)
     this.pushes = new Map();                    // key -> Set of commit-group ids opened or closed by hand
     this.repos = new Map();                     // "repo:base" -> { info, error }: merge settings (fetchRepo)
     this.method = new Map();                    // key -> merge method picked for that PR in the popup
@@ -272,6 +274,16 @@ export default class GitHub extends View {
   showEarlier(key, cx) { this.expanded.add(key); cx.notify(); }
   openedEntries(key) { return this.opened.get(key) ?? new Set(); }
   showEntry(key, index, cx) { this.opened.set(key, this.openedEntries(key).add(index)); cx.notify(); }
+  // Back to the top of the detail. A plain scroll area can't be moved from a script, so the detail
+  // gets a new id: GPUI keeps a scroll position per id, and a new one starts at the top.
+  toTop(key, cx) { this.tops.set(key, (this.tops.get(key) ?? 0) + 1); this.down.delete(key); cx.notify(); }
+  // The wheel's distance, added up: about where the detail is (the scroll area can't be asked, and
+  // dragging its scrollbar isn't counted). Redraws only when the ↑ button appears or goes.
+  scrolled(key, e, cx) {
+    const before = this.down.get(key) ?? 0, after = scrolledBy(before, e);
+    this.down.set(key, after);
+    if (showsTop(before) !== showsTop(after)) cx.notify();
+  }
   toggleChecks(key, cx) { if (!this.checksToggled.delete(key)) this.checksToggled.add(key); cx.notify(); }
   pushesToggled(key) { return this.pushes.get(key) ?? new Set(); }
   togglePush(key, id, cx) { const s = this.pushesToggled(key); if (!s.delete(id)) s.add(id); this.pushes.set(key, s); cx.notify(); }

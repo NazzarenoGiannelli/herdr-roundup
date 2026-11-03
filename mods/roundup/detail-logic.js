@@ -184,3 +184,13 @@ export function reviewInput(pr, detail) {
 export const TIMELINE_FETCHED = 100; // timelineItems(last:100) in the detail query
 // Exactly that many entries came back: the thread may go on further back, on GitHub.
 export const hasOlderActivity = (detail) => Boolean(detail) && Array.isArray(detail.timeline) && detail.timeline.length >= TIMELINE_FETCHED;
+
+// About how far down the detail is, from the wheel: GPUI's delta is negative scrolling down, in
+// pixels, or in lines (about 20 px each) for a mouse that reports lines. Never above the top.
+export const TOP_AFTER = 600; // px down before the ↑ button shows
+export function scrolledBy(before, event) {
+  const px = Number(event?.delta?.y) || 0, lines = Number(event?.delta_lines?.y) || 0;
+  const dy = px !== 0 ? px : lines * 20;
+  return Math.max(0, (Number(before) || 0) - dy);
+}
+export const showsTop = (down) => (Number(down) || 0) > TOP_AFTER;

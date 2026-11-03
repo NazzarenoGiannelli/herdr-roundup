@@ -12,7 +12,7 @@ import { behindOf } from "./actions.js";
 import { behindLine } from "./update-logic.js";
 import { checkRows, checkMark, checksOpen, checksSummary, checkTime } from "./live-logic.js";
 import { activity, groupOpen, pushedLabel, hasOlderCommits, reviewRows, reviewRowLabel } from "./activity-logic.js";
-import { whenLabel, windowTimeline, planBodies, reviewLabel, reviewInput, ciChip, reviewStateLabel, hasOlderActivity, initial, descriptionCap, ENTRY_MAX, threadBudgetFor } from "./detail-logic.js";
+import { whenLabel, windowTimeline, planBodies, reviewLabel, reviewInput, ciChip, reviewStateLabel, hasOlderActivity, initial, descriptionCap, ENTRY_MAX, threadBudgetFor, showsTop } from "./detail-logic.js";
 
 const tone = (t, name) => name === "good" ? t.ansi2 : name === "bad" ? t.ansi1 : name === "warn" ? t.ansi3 : t.dim;
 const stateColor = (t, s) => s === "success" ? t.ansi2 : s === "failure" ? t.ansi1 : s === "pending" ? t.ansi3 : t.dim;
@@ -214,6 +214,14 @@ export function divider(p, t, listH) {
 const placeholder = (t, text) => div().flex_1().min_h(0).p(14).text_size(12).text_color(t.dim).child(text);
 
 // The pane below the divider. `actions` (or null) is the bottom bar's slot, filled by the actions task.
+// Back to the top: a round button over the bottom-right corner of the detail, clear of its scrollbar.
+function toTopButton(p, t, key) {
+  return h_flex().id("gh-top").absolute().bottom(12).right(18).size(32).rounded_full().items_center().justify_center()
+    .bg(t.raised).border_1().border_color(t.border).shadow_md().text_size(14).text_color(t.muted).cursor_pointer()
+    .hover(s => s.bg(t.hover).text_color(t.foreground)).tooltip("Back to the top")
+    .on_click((_e, cx) => p.toTop(key, cx)).child("↑");
+}
+
 export function detailPane(p, t, actions) {
   const item = p.selectedItem();
   if (!item) return v_flex().id("gh-detail").flex_1().min_h(0).child(placeholder(t, p.tab === "pr" ? "Select a pull request to read it here." : "Select an issue to read it here."));
@@ -221,7 +229,10 @@ export function detailPane(p, t, actions) {
   const open = p.tab === "pr" && !item.merged;
   const checks = open ? checksList(p, t, key, detail) : null, reviews = open ? reviewList(p, t, key, detail) : null;
   return v_flex().id("gh-detail").flex_1().min_h(0)
-    .child(v_flex().id(`gh-scroll-${key}`).flex_1().min_h(0).overflow_y_scrollbar().p(12).gap(12)
+    // The scroll area, with ↑ floating in its bottom-right corner once you are well down (see toTop).
+    .child(v_flex().relative().flex_1().min_h(0)
+    .child(v_flex().id(`gh-scroll-${key}-${p.tops.get(key) ?? 0}`).flex_1().min_h(0).overflow_y_scrollbar().p(12).gap(12)
+      .on_scroll_wheel((e, cx) => p.scrolled(key, e, cx))
       .child(header(p, t, item, detail))
       .when(Boolean(checks), el => el.child(checks))
       .when(Boolean(reviews), el => el.child(reviews))
@@ -234,5 +245,6 @@ export function detailPane(p, t, actions) {
         el = el.child(description(p, t, item, detail));
         return log ? el.child(log) : el;
       }))
+    .when(showsTop(p.down.get(key)), el => el.child(toTopButton(p, t, key))))
     .when(Boolean(actions), el => el.child(actions));
 }
