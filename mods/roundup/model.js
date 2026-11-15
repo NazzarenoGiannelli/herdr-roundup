@@ -89,6 +89,9 @@ export function normalizeDetail(graphql) {
     .map(timelineEntry)
     .filter(Boolean)
     .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)); // ISO-8601 UTC sorts lexically; stable for ties
+  const rollup = node.commits?.nodes?.[0]?.commit?.statusCheckRollup ?? null;
+  const current = repo.pullRequest ? currentContexts(rollup) : null;
+  const checks = current ? normalizeChecks(current.nodes) : null;
   return {
     body: node.body ?? "",
     mergeable: node.mergeable ?? null,
@@ -96,13 +99,15 @@ export function normalizeDetail(graphql) {
     additions: node.additions ?? null,
     deletions: node.deletions ?? null,
     changedFiles: node.changedFiles ?? null,
-    checks: repo.pullRequest ? normalizeChecks(node) : null, // issues have none
+    checks, // issues have none
     // What the merge button re-checks (PR only): draft state, refs, the head commit and the rollup state.
     isDraft: repo.pullRequest ? !!node.isDraft : null,
     head: node.headRefName ?? null,
     base: node.baseRefName ?? null,
     headOid: node.headRefOid ?? null,
-    ci: repo.pullRequest ? ciFromRollup(node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state ?? null) : null,
+    // The rollup's state, unless a superseded run was dropped from the checks: GitHub's rollup still counts that run's
+    // cancelled checks as failing, so the state is then read from the checks that count.
+    ci: repo.pullRequest ? (current.superseded ? ciOfChecks(checks) : ciFromRollup(rollup?.state ?? null)) : null,
     timeline,
     // The branch's commits (the last 100, oldest first), who was asked for a review, each reviewer's latest review.
     commits: repo.pullRequest ? normalizeCommits(node.history) : null,
@@ -156,8 +161,53 @@ function checkState(n) {
   }
 }
 
-function normalizeChecks(node) {
-  const nodes = node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes;
+// The workflow run a CheckRun belongs to, or null: a StatusContext, or a check outside GitHub Actions.
+function runOf(n) {
+  const r = n?.__typename === "CheckRun" ? n.checkSuite?.workflowRun : null;
+  const workflow = r?.workflow?.name;
+  if (!r || !workflow) return null;
+  const number = r.runNumber ?? 0;
+  const at = r.createdAt ?? "";
+  return { workflow, key: r.databaseId != null ? `id:${r.databaseId}` : `${number}@${at}`, number, at };
+}
+
+// Whether run a came after run b: the later createdAt (ISO-8601 UTC sorts lexically), then the higher run number.
+function later(a, b) {
+  return a.at !== b.at ? a.at > b.at : a.number > b.number;
+}
+
+// The head commit's checks that still count. GitHub keeps the checks of a workflow run that a newer run of the same
+// workflow replaced on the same commit: a CI that cancels the older run when a newer event arrives for the PR leaves a
+// cancelled job and an aggregator whose name was never evaluated, both read as failing although GitHub calls the PR
+// CLEAN (trace#245, 2026-11-15). When the list is complete, only the latest run of each workflow is kept; checks with
+// no workflow run (StatusContexts, other apps) stay. A truncated list is kept whole, and the rollup decides as before.
+function currentContexts(rollup) {
+  const nodes = ((rollup?.contexts?.nodes) || []).filter(Boolean);
+  const total = rollup?.contexts?.totalCount;
+  if (typeof total !== "number" || nodes.length !== total) return { nodes, superseded: false };
+  const latest = new Map();
+  for (const n of nodes) {
+    const r = runOf(n);
+    if (!r) continue;
+    const best = latest.get(r.workflow);
+    if (!best || later(r, best)) latest.set(r.workflow, r);
+  }
+  const kept = nodes.filter((n) => {
+    const r = runOf(n);
+    return !r || r.key === latest.get(r.workflow).key;
+  });
+  return { nodes: kept, superseded: kept.length !== nodes.length };
+}
+
+// The CI state of the checks that count, in the rollup's words: failing if one fails, running if one runs, passing
+// otherwise (skipped and neutral pass). A cancelled check of the latest run still fails, as before.
+function ciOfChecks(checks) {
+  if (checks.some((c) => c.state === "failure")) return "failure";
+  if (checks.some((c) => c.state === "pending")) return "pending";
+  return checks.length ? "success" : "none";
+}
+
+function normalizeChecks(nodes) {
   return (nodes || []).filter(Boolean).map((n) => {
     const status = n.__typename === "StatusContext";
     const state = checkState(n);
