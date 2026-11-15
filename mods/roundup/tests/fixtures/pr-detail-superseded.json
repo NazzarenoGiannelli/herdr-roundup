@@ -1,0 +1,98 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "body": "A ready PR whose CI ran twice on the same commit: the push's run, cancelled when marking it ready started a newer one.",
+        "isDraft": false,
+        "headRefName": "feat/motion-editor",
+        "baseRefName": "main",
+        "headRefOid": "e1dde8900000000000000000000000000000000",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "additions": 120,
+        "deletions": 4,
+        "changedFiles": 3,
+        "commits": {
+          "nodes": [
+            {
+              "commit": {
+                "statusCheckRollup": {
+                  "state": "FAILURE",
+                  "contexts": {
+                    "totalCount": 6,
+                    "nodes": [
+                      {
+                        "__typename": "CheckRun",
+                        "name": "quick",
+                        "status": "COMPLETED",
+                        "conclusion": "CANCELLED",
+                        "startedAt": "2026-11-15T10:59:08Z",
+                        "completedAt": "2026-11-15T10:59:14Z",
+                        "detailsUrl": "https://github.com/o/r/actions/runs/101/job/1",
+                        "checkSuite": { "workflowRun": { "databaseId": 101, "runNumber": 940, "createdAt": "2026-11-15T10:59:05Z", "workflow": { "name": "CI" } } }
+                      },
+                      {
+                        "__typename": "CheckRun",
+                        "name": "(github.event.action == 'labeled' && github.event.label.name != 'ci:full') && 'check (skipped)' || github.event.pull_request.draft && 'check (draft)' || 'check'",
+                        "status": "COMPLETED",
+                        "conclusion": "FAILURE",
+                        "startedAt": "2026-11-15T10:59:14Z",
+                        "completedAt": "2026-11-15T10:59:14Z",
+                        "detailsUrl": "https://github.com/o/r/actions/runs/101/job/2",
+                        "checkSuite": { "workflowRun": { "databaseId": 101, "runNumber": 940, "createdAt": "2026-11-15T10:59:05Z", "workflow": { "name": "CI" } } }
+                      },
+                      {
+                        "__typename": "CheckRun",
+                        "name": "quick",
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS",
+                        "startedAt": "2026-11-15T10:59:20Z",
+                        "completedAt": "2026-11-15T11:03:39Z",
+                        "detailsUrl": "https://github.com/o/r/actions/runs/102/job/3",
+                        "checkSuite": { "workflowRun": { "databaseId": 102, "runNumber": 941, "createdAt": "2026-11-15T10:59:13Z", "workflow": { "name": "CI" } } }
+                      },
+                      {
+                        "__typename": "CheckRun",
+                        "name": "browser-a",
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS",
+                        "startedAt": "2026-11-15T11:04:00Z",
+                        "completedAt": "2026-11-15T11:09:21Z",
+                        "detailsUrl": "https://github.com/o/r/actions/runs/102/job/4",
+                        "checkSuite": { "workflowRun": { "databaseId": 102, "runNumber": 941, "createdAt": "2026-11-15T10:59:13Z", "workflow": { "name": "CI" } } }
+                      },
+                      {
+                        "__typename": "CheckRun",
+                        "name": "check",
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS",
+                        "startedAt": "2026-11-15T11:19:00Z",
+                        "completedAt": "2026-11-15T11:19:03Z",
+                        "detailsUrl": "https://github.com/o/r/actions/runs/102/job/5",
+                        "checkSuite": { "workflowRun": { "databaseId": 102, "runNumber": 941, "createdAt": "2026-11-15T10:59:13Z", "workflow": { "name": "CI" } } }
+                      },
+                      {
+                        "__typename": "CheckRun",
+                        "name": "claude-review",
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS",
+                        "startedAt": "2026-11-15T10:59:10Z",
+                        "completedAt": "2026-11-15T11:00:28Z",
+                        "detailsUrl": "https://github.com/o/r/actions/runs/100/job/6",
+                        "checkSuite": { "workflowRun": { "databaseId": 100, "runNumber": 77, "createdAt": "2026-11-15T10:59:05Z", "workflow": { "name": "Claude Code Review" } } }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "history": { "totalCount": 0, "nodes": [] },
+        "reviewRequests": { "nodes": [] },
+        "latestReviews": { "nodes": [] },
+        "timelineItems": { "nodes": [] }
+      }
+    }
+  }
+}

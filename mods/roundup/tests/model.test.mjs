@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { normalizePRs, normalizeIssues, normalizeDetail, truncated } from "../model.js";
-import { views } from "../rules.js";
+import { views, mergeBlock } from "../rules.js";
 import { normalizeConfig } from "../config.js";
 
 const fx = (name) =>
@@ -268,4 +268,66 @@ test("normalizeDetail (PR): draft state, refs, head commit and CI for the merge 
 test("normalizeDetail (issue): the PR-only merge fields are null", () => {
   const d = normalizeDetail({ data: { repository: { issue: { body: "" } } } });
   for (const k of ["isDraft", "head", "base", "headOid", "ci"]) assert.equal(d[k], null);
+});
+
+// A PR whose CI ran twice on one commit (trace#245, 2026-11-15): the push's run was cancelled when marking the PR ready
+// started a newer one. GitHub's rollup still says FAILURE, GitHub itself calls the PR CLEAN.
+const superseded = () => fx("pr-detail-superseded.json");
+const contextsOf = (raw) => raw.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts;
+const blockOf = (d) => mergeBlock({ ci: d.ci, mergeable: d.mergeable, mergeState: d.mergeState, checks: d.checks });
+
+test("normalizeDetail: a run replaced by a newer run of the same workflow no longer counts", () => {
+  const d = normalizeDetail(superseded());
+  assert.deepEqual(d.checks.map((c) => [c.name, c.state]),
+    [["quick", "success"], ["browser-a", "success"], ["check", "success"], ["claude-review", "success"]],
+    "the newer CI run's checks, plus the other workflow's");
+  assert.equal(d.ci, "success", "the rollup's FAILURE came from the cancelled run only");
+  assert.equal(blockOf(d), null, "nothing stops the merge");
+});
+
+test("normalizeDetail: the newer run failing still fails, naming its own check", () => {
+  const raw = superseded();
+  contextsOf(raw).nodes.find((n) => n.name === "browser-a").conclusion = "FAILURE";
+  const d = normalizeDetail(raw);
+  assert.equal(d.ci, "failure");
+  assert.equal(blockOf(d), "CI failing: browser-a");
+});
+
+test("normalizeDetail: a latest run that was itself cancelled still fails, as before", () => {
+  const raw = superseded();
+  const nodes = contextsOf(raw).nodes;
+  nodes.find((n) => n.name === "quick" && n.checkSuite.workflowRun.databaseId === 102).conclusion = "CANCELLED";
+  const d = normalizeDetail(raw);
+  assert.equal(d.ci, "failure");
+  assert.equal(blockOf(d), "CI failing: quick");
+});
+
+test("normalizeDetail: a truncated list keeps every check and the rollup's word", () => {
+  const raw = superseded();
+  contextsOf(raw).totalCount = 140;
+  const d = normalizeDetail(raw);
+  assert.equal(d.checks.length, 6, "nothing is dropped when GitHub did not send the whole list");
+  assert.equal(d.ci, "failure", "the rollup decides, as it did");
+});
+
+test("normalizeDetail: runs created in the same second are told apart by their number", () => {
+  const raw = superseded();
+  for (const n of contextsOf(raw).nodes) {
+    const r = n.checkSuite.workflowRun;
+    if (r.workflow.name === "CI") r.createdAt = "2026-11-15T10:59:05Z";
+  }
+  const d = normalizeDetail(raw);
+  assert.equal(d.ci, "success");
+  assert.equal(d.checks.filter((c) => c.name === "quick").length, 1);
+});
+
+test("normalizeDetail: with one run per workflow nothing changes, the rollup decides", () => {
+  const raw = superseded();
+  const ctx = contextsOf(raw);
+  ctx.nodes = ctx.nodes.filter((n) => n.checkSuite.workflowRun.databaseId !== 101);
+  ctx.totalCount = ctx.nodes.length;
+  raw.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.state = "PENDING";
+  const d = normalizeDetail(raw);
+  assert.equal(d.checks.length, 4);
+  assert.equal(d.ci, "pending", "the rollup's state is kept when no run was dropped");
 });
